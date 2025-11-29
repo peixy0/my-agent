@@ -46,6 +46,7 @@ The agent has the following tools:
 *   `run_command`: Executes a shell command.
 *   `web_search`: Performs a web search using DuckDuckGo.
 *   `fetch`: Fetches the content of a web page.
+*   `write_file`: Writes content to a file.
 
 ## 6. Configuration
 
@@ -67,5 +68,7 @@ The agent will be implemented in Python and will use the following libraries:
 *   `ddgs`: For performing web searches.
 *   `trafilatura`: For fetching web page content.
 *   `uv`: For project and dependency management.
+*   `ruff`: For linting.
+*   `pyright`: For static type checking.
 
-The project will be structured with a `src` directory for the source code, a `docs` directory for documentation, and a `tests` directory for tests.
+The project will be structured with a `agent` directory for the source code, a `docs` directory for documentation, and a `tests` directory for tests.

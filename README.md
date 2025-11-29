@@ -54,6 +54,7 @@ The agent comes with the following built-in tools:
 *   **`run_command`:** Executes a shell command.
 *   **`web_search`:** Performs a web search using DuckDuckGo.
 *   **`fetch`:** Fetches the content of a web page.
+*   **`write_file`:** Writes content to a file.
 
 You can add new tools by creating a Python function and registering it with the LLM client.
 

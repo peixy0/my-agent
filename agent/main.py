@@ -35,7 +35,7 @@ async def main():
         model=settings.openai_model,
         api_key=settings.openai_api_key,
     )
-    tools.register_tools(llm_client)
+    tools.register_tools(llm_client, console, settings.whitelist_tools)
 
     current_datetime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     operating_system = platform.system()

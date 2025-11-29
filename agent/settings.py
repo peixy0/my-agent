@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o"
     openai_api_key: str = ""
 
+    whitelist_tools: list[str] = []
+
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8"
     )
