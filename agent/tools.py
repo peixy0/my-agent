@@ -130,7 +130,7 @@ def register_tools(llm_client: LLMClient, console: Console, whitelist: list[str]
                     "description": "The content to be written.",
                 },
             },
-            "required": ["filename, content"],
+            "required": ["filename", "content"],
         }
     )
     async def write_file(filename: str, content: str) -> dict[str, Any]:
