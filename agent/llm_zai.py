@@ -6,6 +6,7 @@ import time
 from asyncio import Lock
 from typing import Any
 
+from typing_extensions import override
 from zai import ZaiClient
 from zai.core import APIReachLimitError, APITimeoutError
 
@@ -41,6 +42,7 @@ class LLMClient(LLMBase):
         self._rate_limit_lock: Lock = Lock()
         self._next_request_time: float = 0.0
 
+    @override
     async def _do_completion(self, *args: Any, **kwargs: Any) -> Any:
         """
         Performs a chat completion with rate limiting and retry logic.

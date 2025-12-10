@@ -23,8 +23,8 @@ def cli():
 
 
 def handle_slash_command(
-    prompt: str, console: Console, system_prompt: str, messages: list[dict]
-) -> tuple[bool, bool, list[dict]]:
+    prompt: str, console: Console, system_prompt: str, messages: list[dict[str, str]]
+) -> tuple[bool, bool, list[dict[str, str]]]:
     """
     Handle commands starting with '/'.
 
@@ -50,7 +50,7 @@ def handle_slash_command(
 
     console.print(
         f"[bold yellow]Unknown command:[/bold yellow] {prompt}. "
-        "Supported commands: /exit, /clear"
+        + "Supported commands: /exit, /clear"
     )
     return True, False, messages
 

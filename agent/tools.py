@@ -1,5 +1,5 @@
 import subprocess
-from typing import Any
+from typing import Any, cast
 
 import trafilatura
 from ddgs import DDGS
@@ -88,8 +88,8 @@ def register_tools(llm_client: LLMBase, console: Console, whitelist: list[str]):
                 "reason": reason,
             }
 
-        with DDGS() as ddgs:  # pyright: ignore[reportGeneralTypeIssues, reportUnknownVariableType]
-            results = [r for r in ddgs.text(query, max_results=7)]  # pyright: ignore[reportUnknownVariableType]
+        with cast(Any, DDGS()) as ddgs:
+            results = [r for r in ddgs.text(query, max_results=7)]
             return {"status": "success", "results": results}
 
     @llm_client.register_function(
