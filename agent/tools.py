@@ -6,10 +6,10 @@ from ddgs import DDGS
 from rich.console import Console
 from rich.prompt import Confirm, Prompt
 
-from .llm import LLMClient
+from .llm_base import LLMBase
 
 
-def register_tools(llm_client: LLMClient, console: Console, whitelist: list[str]):
+def register_tools(llm_client: LLMBase, console: Console, whitelist: list[str]):
     """
     Registers the tools with the LLM client.
 

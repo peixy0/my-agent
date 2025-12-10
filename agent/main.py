@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from rich.console import Console
 
 from . import tools
-from .llm import LLMClient
+from .llm_openai import LLMClient
 from .settings import settings
 
 _ = load_dotenv()
@@ -22,13 +22,46 @@ def cli():
     asyncio.run(main())
 
 
+def handle_slash_command(
+    prompt: str, console: Console, system_prompt: str, messages: list[dict]
+) -> tuple[bool, bool, list[dict]]:
+    """
+    Handle commands starting with '/'.
+
+    Returns a tuple:
+        (handled, should_exit, updated_messages)
+    """
+    if not prompt.startswith("/"):
+        return False, False, messages
+
+    command, *_ = prompt[1:].split(maxsplit=1)
+    command = command.lower()
+
+    if command == "exit":
+        return True, True, messages
+    if command == "clear":
+        # Reset conversation history and clear the console output
+        messages = [{"role": "system", "content": system_prompt}]
+        console.clear()
+        console.print(
+            "[bold green]History cleared. You are starting a new conversation.[/bold green]"
+        )
+        return True, False, messages
+
+    console.print(
+        f"[bold yellow]Unknown command:[/bold yellow] {prompt}. "
+        "Supported commands: /exit, /clear"
+    )
+    return True, False, messages
+
+
 async def main():
     """
     The main asynchronous function for the system-level LLM agent.
     """
     console = Console()
     console.print("[bold green]System-Level LLM Agent[/bold green]")
-    console.print("Type 'exit' to end the conversation.")
+    console.print("Type '/exit' to end the conversation, '/clear' to clear history.")
 
     llm_client = LLMClient(
         url=settings.openai_base_url,
@@ -51,8 +84,13 @@ async def main():
     while True:
         try:
             prompt = console.input("> ")
-            if prompt.lower() == "exit":
+            handled, should_exit, messages = handle_slash_command(
+                prompt, console, system_prompt, messages
+            )
+            if should_exit:
                 break
+            if handled:
+                continue
 
             messages.append({"role": "user", "content": prompt})
             response = await llm_client.chat(messages)
