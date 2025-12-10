@@ -6,7 +6,8 @@ import time
 from asyncio import Lock
 from typing import Any
 
-from openai import AsyncOpenAI, InternalServerError, RateLimitError
+from zai import ZaiClient
+from zai.core import APIReachLimitError, APITimeoutError
 
 from .llm_base import LLMBase
 
@@ -30,7 +31,7 @@ class LLMClient(LLMBase):
             model: The name of the LLM model to use.
             api_key: The API key for the LLM API.
         """
-        self.client: AsyncOpenAI = AsyncOpenAI(
+        self.client: ZaiClient = ZaiClient(
             base_url=url,
             api_key=api_key,
         )
@@ -55,8 +56,10 @@ class LLMClient(LLMBase):
                     await asyncio.sleep(wait_time)
 
                 try:
-                    return await self.client.chat.completions.create(*args, **kwargs)
-                except (InternalServerError, RateLimitError) as e:
+                    return await asyncio.to_thread(
+                        self.client.chat.completions.create, *args, **kwargs
+                    )
+                except (APITimeoutError, APIReachLimitError) as e:
                     logger.warning(
                         f"LLM Completion failure, retrying in {retry_timer}: {e}"
                     )

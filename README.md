@@ -1,6 +1,6 @@
-# System-Level LLM Agent
+# LLM Agent
 
-This project provides a system-level LLM agent that can assist you with running commands and solving problems on your local system. The agent is designed to be extensible, allowing you to easily add new tools and capabilities.
+This project provides a LLM agent that can assist you with running commands and solving problems on your local system. The agent is designed to be extensible, allowing you to easily add new tools and capabilities.
 
 ## Features
 

@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from rich.console import Console
 
 from . import tools
-from .llm_openai import LLMClient
+from .llm_factory import LLMFactory
 from .settings import settings
 
 _ = load_dotenv()
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 def cli():
     """
-    The main command-line interface for the system-level LLM agent.
+    The main command-line interface for the LLM agent.
     """
     asyncio.run(main())
 
@@ -57,13 +57,13 @@ def handle_slash_command(
 
 async def main():
     """
-    The main asynchronous function for the system-level LLM agent.
+    The main asynchronous function for the LLM agent.
     """
     console = Console()
-    console.print("[bold green]System-Level LLM Agent[/bold green]")
+    console.print("[bold green]LLM Agent[/bold green]")
     console.print("Type '/exit' to end the conversation, '/clear' to clear history.")
 
-    llm_client = LLMClient(
+    llm_client = LLMFactory.create(
         url=settings.openai_base_url,
         model=settings.openai_model,
         api_key=settings.openai_api_key,
@@ -74,9 +74,12 @@ async def main():
     operating_system = platform.system()
 
     system_prompt = (
-        f"You are a helpful system-level LLM agent. "
+        f"You are a helpful LLM agent. "
         f"Current datetime: {current_datetime}. "
-        f"Operating system: {operating_system}."
+        f"Operating system: {operating_system}. "
+        "You are encouraged to use tools extensively and perform research to answer user queries comprehensively. "
+        "Don't hesitate to use multiple tool calls or take multiple steps to solve a problem. "
+        "Always be helpful, thorough, and precise."
     )
 
     messages = [{"role": "system", "content": system_prompt}]
