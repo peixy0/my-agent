@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o"
     openai_api_key: str = ""
 
+    tts_model_path: str = ""
+
     whitelist_tools: list[str] = []
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(

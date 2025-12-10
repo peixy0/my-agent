@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from rich.console import Console
 
 from . import tools
+from .audio import TTS
 from .llm_factory import LLMFactory
 from .settings import settings
 
@@ -63,6 +64,7 @@ async def main():
     console.print("[bold green]LLM Agent[/bold green]")
     console.print("Type '/exit' to end the conversation, '/clear' to clear history.")
 
+    audio = TTS(settings.tts_model_path).create_audio()
     llm_client = LLMFactory.create(
         url=settings.openai_base_url,
         model=settings.openai_model,
@@ -79,13 +81,15 @@ async def main():
         f"Operating system: {operating_system}. "
         "You are encouraged to use tools extensively and perform research to answer user queries comprehensively. "
         "Don't hesitate to use multiple tool calls or take multiple steps to solve a problem. "
-        "Always be helpful, thorough, and precise."
+        "Generate a helpful, thorough, and precise response optimized for reading aloud."
+        "Avoid complex sentence structures or visual formatting that cannot be spoken. Output as a single block of plain text."
+        "Do not use Markdown, bolding, headers, bullet points, or numbered lists."
     )
 
     messages = [{"role": "system", "content": system_prompt}]
 
-    while True:
-        try:
+    try:
+        while True:
             prompt = console.input("> ")
             handled, should_exit, messages = handle_slash_command(
                 prompt, console, system_prompt, messages
@@ -99,12 +103,16 @@ async def main():
             response = await llm_client.chat(messages)
             console.print(f"[bold blue]Agent:[/bold blue] {response}")
             messages.append({"role": "assistant", "content": response})
-
-        except (KeyboardInterrupt, EOFError):
-            break
-        except Exception as e:
-            logger.error(f"An unexpected error occurred: {e}")
-            console.print(f"[bold red]Error:[/bold red] {e}")
+            audio.feed(response)
+    except (KeyboardInterrupt, EOFError):
+        pass
+    except Exception as e:
+        logger.error(f"An unexpected error occurred: {e}")
+        console.print(f"[bold red]Error:[/bold red] {e}")
+    finally:
+        console.print("\n[bold red]Exiting...[/bold red]")
+        audio.stop()
+        audio.wait_until_done()
 
 
 if __name__ == "__main__":
