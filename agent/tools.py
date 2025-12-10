@@ -42,6 +42,7 @@ def register_tools(llm_client: LLMBase, console: Console, whitelist: list[str]):
     async def run_command(command: str) -> dict[str, Any]:
         """
         Executes a shell command.
+        This tool can be used to explore the local filesystem when needed, e.g. use `ls -R` or `dir` to list files in a directory.
         """
 
         allow, reason = approve_tool(
@@ -147,3 +148,72 @@ def register_tools(llm_client: LLMBase, console: Console, whitelist: list[str]):
         with open(filename, "w") as output:
             _ = output.write(content)
         return {"status": "success"}
+
+    @llm_client.register_function(
+        {
+            "type": "object",
+            "properties": {
+                "filename": {
+                    "type": "string",
+                    "description": "The name of the file.",
+                },
+            },
+            "required": ["filename"],
+        }
+    )
+    async def read_file(filename: str) -> dict[str, Any]:
+        """
+        Read content from a file.
+        """
+
+        allow, reason = approve_tool(
+            read_file.__name__, f"read from file [bold]{filename}[/bold]"
+        )
+        if not allow:
+            return {"status": "cancelled", "reason": reason}
+
+        with open(filename, "r") as input:
+            content = input.read()
+            return {"status": "success", "content": content}
+
+    @llm_client.register_function(
+        {
+            "type": "object",
+            "properties": {
+                "filename": {
+                    "type": "string",
+                    "description": "The name of the file.",
+                },
+                "original": {
+                    "type": "string",
+                    "description": "The original content in the file to be replaced.",
+                },
+                "replaced": {
+                    "type": "string",
+                    "description": "The new content to be written over the replaced text.",
+                },
+            },
+            "required": ["filename", "original", "replaced"],
+        }
+    )
+    async def edit_file(filename: str, original: str, replaced: str) -> dict[str, Any]:
+        """
+        Edit content of a file.
+        """
+
+        allow, reason = approve_tool(
+            edit_file.__name__, f"edit file [bold]{filename}[/bold]"
+        )
+        if not allow:
+            return {"status": "cancelled", "reason": reason}
+
+        with open(filename, "rw") as input:
+            content = input.read()
+            if content.find(original) == -1:
+                return {
+                    "status": "failed",
+                    "error": f"original content not found, please use {read_file.__name__} tool to confirm the content.",
+                }
+            content = content.replace(original, replaced)
+            _ = input.write(content)
+            return {"status": "success"}
