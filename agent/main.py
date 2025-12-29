@@ -100,9 +100,16 @@ async def main():
                 continue
 
             messages.append({"role": "user", "content": prompt})
-            response = await llm_client.chat(messages)
-            console.print(f"[bold blue]Agent:[/bold blue] {response}")
-            messages.append({"role": "assistant", "content": response})
+            response = ""
+            try:
+                response = await llm_client.chat(messages)
+                console.print(f"[bold blue]Agent:[/bold blue] {response}")
+            except Exception as e:
+                response = f"An unexpected error occurred: {e}"
+                logger.error(response)
+                console.print(f"[bold red]Error:[/bold red] {e}")
+            finally:
+                messages.append({"role": "assistant", "content": response})
             audio.feed(response)
     except (KeyboardInterrupt, EOFError):
         pass
