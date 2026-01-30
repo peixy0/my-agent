@@ -7,6 +7,11 @@ from rich.console import Console
 from rich.prompt import Confirm, Prompt
 
 from .llm_base import LLMBase
+from .settings import settings
+from .skill_loader import SkillLoader
+
+
+skill_loader = SkillLoader(settings.skills_dir)
 
 
 def register_tools(llm_client: LLMBase, console: Console, whitelist: list[str]):
@@ -217,3 +222,39 @@ def register_tools(llm_client: LLMBase, console: Console, whitelist: list[str]):
             content = content.replace(original, replaced)
             _ = input.write(content)
             return {"status": "success"}
+
+    @llm_client.register_function(
+        {
+            "type": "object",
+            "properties": {
+                "skill_name": {
+                    "type": "string",
+                    "description": "The name of the skill to load.",
+                }
+            },
+            "required": ["skill_name"],
+        }
+    )
+    async def use_skill(skill_name: str) -> dict[str, Any]:
+        """
+        Load the full instructions for a specific skill.
+        Use this when you identify a relevant skill from your available skills list and need detailed instructions on how to apply it.
+        """
+        allow, reason = approve_tool(
+            use_skill.__name__, f"use skill [bold]{skill_name}[/bold]"
+        )
+        if not allow:
+            return {"status": "cancelled", "reason": reason}
+
+        skill = skill_loader.load_skill(skill_name)
+        if not skill:
+            return {"status": "error", "message": f"Skill '{skill_name}' not found"}
+        return {
+            "status": "success",
+            "skill": {
+                "name": skill.name,
+                "skill_dir": skill.skill_dir,
+                "description": skill.description,
+                "instructions": skill.instructions,
+            },
+        }

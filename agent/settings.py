@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     tts_model_path: str = ""
 
     whitelist_tools: list[str] = []
+    skills_dir: str = ".skills"
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8"

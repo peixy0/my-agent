@@ -140,3 +140,4 @@ build/
 **/*.egg-info/
 
 models/
+.skills

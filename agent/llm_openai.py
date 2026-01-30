@@ -1,12 +1,14 @@
-from __future__ import annotations
-
-import asyncio
 import logging
-import time
-from asyncio import Lock
 from typing import Any
 
 from openai import AsyncOpenAI, InternalServerError, RateLimitError
+from tenacity import (
+    before_sleep_log,
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 from typing_extensions import override
 
 from .llm_base import LLMBase
@@ -37,33 +39,15 @@ class LLMClient(LLMBase):
         )
         super().__init__(model)
 
-        self._rate_limit_secs: float = 1
-        self._rate_limit_lock: Lock = Lock()
-        self._next_request_time: float = 0.0
-
+    @retry(
+        retry=retry_if_exception_type((InternalServerError, RateLimitError)),
+        wait=wait_exponential(multiplier=1, min=5, max=60),
+        stop=stop_after_attempt(5),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+    )
     @override
     async def _do_completion(self, *args: Any, **kwargs: Any) -> Any:
         """
-        Performs a chat completion with rate limiting and retry logic.
+        Performs a chat completion with rate limiting and retry logic using tenacity.
         """
-        retry_timer = 5
-        while True:
-            async with self._rate_limit_lock:
-                now = time.monotonic()
-                next_request_time = max(self._next_request_time, now)
-                self._next_request_time = next_request_time + self._rate_limit_secs
-                wait_time = now - next_request_time
-                if wait_time > 0:
-                    await asyncio.sleep(wait_time)
-
-                try:
-                    return await self.client.chat.completions.create(*args, **kwargs)
-                except (InternalServerError, RateLimitError) as e:
-                    logger.warning(
-                        f"LLM Completion failure, retrying in {retry_timer}: {e}"
-                    )
-                    await asyncio.sleep(retry_timer)
-                    retry_timer *= 2
-                except Exception as e:
-                    logger.warning(f"LLM Completion failure: {e}")
-                    raise
+        return await self.client.chat.completions.create(*args, **kwargs)

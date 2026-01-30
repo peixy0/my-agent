@@ -2,6 +2,7 @@ import json
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable
 from typing import Any, Callable
+from rich.console import Console
 
 
 class LLMBase(ABC):
@@ -39,7 +40,7 @@ class LLMBase(ABC):
         raise NotImplementedError
 
     async def chat(
-        self, messages: list[dict[str, str]], max_iterations: int = 50
+        self, messages: list[dict[str, str]], console: Console, max_iterations: int = 50
     ) -> str:
         """
         Sends a chat message to the LLM and handles the response.
@@ -68,6 +69,9 @@ class LLMBase(ABC):
             messages.append(message.model_dump())
 
             if message.tool_calls:
+                if message.content:
+                    console.print(f"[bold blue]Agent (thought):[/bold blue] {message.content}")
+
                 tool_messages: list[dict[str, str]] = []
                 for tool_call in message.tool_calls:
                     tool_name = tool_call.function.name

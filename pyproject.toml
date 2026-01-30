@@ -10,7 +10,7 @@ dependencies = [
     "ddgs",
     "rich",
     "trafilatura",
-    "zai-sdk>=0.1.0",
+    "tenacity",
 ]
 
 [dependency-groups]

@@ -10,6 +10,7 @@ from . import tools
 from .audio import TTS
 from .llm_factory import LLMFactory
 from .settings import settings
+from .skill_loader import SkillLoader
 
 _ = load_dotenv()
 
@@ -75,12 +76,23 @@ async def main():
     current_datetime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     operating_system = platform.system()
 
+    skill_loader = SkillLoader(settings.skills_dir)
+    skill_summaries = skill_loader.discover_skills()
+    skills_text = ""
+    if skill_summaries:
+        skills_text = "\n\nAvailable specialized skills:\n"
+        for s in skill_summaries:
+            skills_text += f"- {s.name}: {s.description}\n"
+        skills_text += "\nUse the `use_skill` tool to load full instructions and the skill's root directory path. "
+        skills_text += "Once you have the skill path, you are encouraged to explore referenced files in the directory to perform the task more effectively."
+
     system_prompt = (
         f"You are a helpful LLM agent. "
         f"Current datetime: {current_datetime}. "
         f"Operating system: {operating_system}. "
         "You are encouraged to use tools extensively and perform research to answer user queries comprehensively. "
         "Don't hesitate to use multiple tool calls or take multiple steps to solve a problem. "
+        f"{skills_text} "
         "Generate a helpful, thorough, and precise response optimized for reading aloud."
         "Avoid complex sentence structures or visual formatting that cannot be spoken. Output as a single block of plain text."
         "Do not use Markdown, bolding, headers, bullet points, or numbered lists."
@@ -102,7 +114,7 @@ async def main():
             messages.append({"role": "user", "content": prompt})
             response = ""
             try:
-                response = await llm_client.chat(messages)
+                response = await llm_client.chat(messages, console)
                 console.print(f"[bold blue]Agent:[/bold blue] {response}")
             except Exception as e:
                 response = f"An unexpected error occurred: {e}"

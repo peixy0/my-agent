@@ -6,69 +6,79 @@ This document outlines the design and specification for a system-level Large Lan
 
 ## 2. Core Components
 
-The agent will consist of the following core components:
+The agent consists of the following core components:
 
-*   **LLM Client:** A component responsible for interacting with the LLM API. It will handle sending requests, processing responses, and managing tool calls.
+*   **LLM Client:** A component responsible for interacting with the LLM API. It uses a factory pattern to create specific clients (e.g., OpenAI) based on an abstract base class.
 *   **Tool Registry:** A mechanism for registering and managing tools that the LLM can use to interact with the system.
-*   **CLI Application:** The entry point of the agent, responsible for initializing the LLM client, registering tools, and handling user interactions in the terminal.
+*   **Skill Loader:** A component that discovers and loads specialized "skills" from a dedicated directory. Skills provide detailed instructions for specific tasks.
+*   **Audio System (TTS):** A Text-to-Speech component that converts agent responses into spoken audio using the Piper TTS engine.
+*   **CLI Application:** The entry point of the agent, responsible for initializing the LLM client, registering tools, loading skills, and handling user interactions in the terminal, including slash commands.
 *   **Configuration:** A component for managing application settings and secrets using `pydantic-settings`.
 
 ## 3. Features
 
-*   **Natural Language Interaction:** Users will interact with the agent using natural language in a CLI.
-*   **Command Execution:** The agent will be able to execute shell commands on the user's system.
-*   **Web Search:** The agent can perform web searches using DuckDuckGo.
-*   **Web Page Fetching:** The agent can fetch the content of a web page.
-*   **User Confirmation:** The agent will ask for confirmation before executing any tool that may have side effects. The user can cancel and provide a reason for the cancellation.
-*   **Extensibility:** The agent will be designed to be extensible, allowing new tools to be easily added.
-*   **Secure Configuration:** The agent will use `pydantic-settings` to load configuration from a `.env` file, ensuring that sensitive information is not hard-coded in the source code.
+*   **Natural Language Interaction:** Users interact with the agent using natural language in a CLI.
+*   **Command Execution:** The agent can execute shell commands on the user's system.
+*   **Web Search & Fetching:** The agent can perform web searches using DuckDuckGo and fetch web page content.
+*   **File Management:** The agent can read, write, and edit files on the local filesystem.
+*   **Specialized Skills:** The agent can discover and use "skills" which are Markdown files containing specialized instructions for complex tasks. Discoverable skills are injected into the system prompt.
+*   **Audio Feedback:** Agent responses are read aloud using local TTS, optimized for spoken output (plain text, no Markdown).
+*   **Slash Commands:** Support for terminal-only commands like `/exit` and `/clear`.
+*   **User Confirmation & Whitelisting:** The agent prompts for confirmation before executing tools with side effects. Specific tools can be whitelisted for auto-approval.
+*   **Extensibility:** New tools and skills can be easily added.
+*   **Secure Configuration:** Configuration is loaded from a `.env` file using `pydantic-settings`.
 
 ## 4. High-Level Architecture
 
-The agent will follow this architecture:
-
-1.  The user provides a natural language query to the agent via the CLI.
-2.  The main application receives the query and sends it to the LLM client.
-3.  The LLM client sends the query to the LLM API.
-4.  The LLM processes the query and, if necessary, makes a tool call.
-5.  The LLM client receives the tool call and, before executing it, prompts the user for confirmation.
-6.  If the user confirms, the corresponding tool is executed, and the result is sent back to the LLM.
-7.  If the user denies the execution, they are prompted for a reason, which is then sent to the LLM.
-8.  The LLM processes the tool result or the cancellation reason and generates a final response.
-9.  The main application receives the final response and displays it to the user in the CLI.
+1.  **Initialization:** The CLI initializes settings, the LLM client, the audio system, and the skill loader.
+2.  **Skill Discovery:** The skill loader scans the `.skills` directory for `SKILL.md` files and provides summaries to the LLM.
+3.  **Interaction Loop:**
+    a.  The user enters a query or a slash command.
+    b.  Slash commands are handled directly by the CLI.
+    c.  Natural language queries are sent to the LLM along with the conversation history and a system prompt containing skill summaries and system info (OS, time).
+    d.  The LLM processes the query and may call one or more tools.
+    e.  The CLI prompts for tool approval (unless whitelisted).
+    f.  Tool results (or cancellation reasons) are sent back to the LLM.
+    g.  The LLM generates a final response optimized for speech (plain text).
+    h.  The response is displayed in the CLI and sent to the audio system for playback.
 
 ## 5. Tool Definition
 
-Tools will be defined as Python functions and registered with the LLM client. Each tool will have a JSON schema that describes its parameters and functionality. This schema will be used by the LLM to understand how to use the tool.
+Tools are Python functions registered with the LLM client via a JSON schema.
 
-The agent has the following tools:
+Current tools include:
 
 *   `run_command`: Executes a shell command.
 *   `web_search`: Performs a web search using DuckDuckGo.
 *   `fetch`: Fetches the content of a web page.
+*   `read_file`: Reads content from a file.
 *   `write_file`: Writes content to a file.
+*   `edit_file`: Replaces a specific block of text in a file.
+*   `use_skill`: Loads the full instructions for a specialized skill.
 
 ## 6. Configuration
 
-The agent will use a `Settings` class based on `pydantic-settings` to manage configuration. The following settings will be defined:
+The `Settings` class (via `pydantic-settings`) manages the following:
 
-*   `openai_base_url`: The URL of the LLM API.
-*   `openai_model`: The name of the LLM model to use.
-*   `openai_api_key`: The API key for the LLM API.
-
-These settings will be loaded from a `.env` file.
+*   `openai_base_url`: LLM API base URL.
+*   `openai_model`: LLM model name.
+*   `openai_api_key`: API key for the LLM.
+*   `tts_model_path`: Path to the Piper TTS model file.
+*   `whitelist_tools`: List of tool names that don't require user confirmation.
+*   `skills_dir`: Directory where specialized skills are stored (default: `.skills`).
 
 ## 7. Implementation Details
 
-The agent will be implemented in Python and will use the following libraries:
+*   **Language:** Python 3.10+
+*   **LLM Interaction:** `openai` library with a custom abstraction layer (`LLMBase`) and `tenacity` for robust error handling and retries.
+*   **CLI:** `rich` for formatting and `Prompt` for user input.
+*   **Audio:** `pyaudio` for playback and `piper-tts` for synthesis.
+*   **Web Tools:** `ddgs` (DuckDuckGo Search) and `trafilatura` (content extraction).
+*   **Project Management:** `uv` for dependencies and environment.
+*   **Code Quality:** `ruff` for linting and `pyright` for type checking.
 
-*   `openai`: For interacting with the LLM API.
-*   `pydantic-settings`: For managing configuration.
-*   `rich`: For building the command-line interface.
-*   `ddgs`: For performing web searches.
-*   `trafilatura`: For fetching web page content.
-*   `uv`: For project and dependency management.
-*   `ruff`: For linting.
-*   `pyright`: For static type checking.
-
-The project will be structured with a `agent` directory for the source code, a `docs` directory for documentation, and a `tests` directory for tests.
+The project structure:
+*   `agent/`: Source code modules.
+*   `docs/`: Documentation.
+*   `.skills/`: Specialized skill definitions.
+*   `workspace/`: Default area for agent operations.
