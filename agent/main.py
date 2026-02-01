@@ -80,10 +80,10 @@ async def main():
     skill_summaries = skill_loader.discover_skills()
     skills_text = ""
     if skill_summaries:
-        skills_text = "\n\nAvailable specialized skills:\n"
+        skills_text = "Available specialized skills:\n"
         for s in skill_summaries:
             skills_text += f"- {s.name}: {s.description}\n"
-        skills_text += "\nUse the `use_skill` tool to load full instructions and the skill's root directory path. "
+        skills_text += "\nUse the `use_skill` tool to gain access to specific domain knowledge. You can use it at any time for any skills that are related to the task description."
         skills_text += "Once you have the skill path, you are encouraged to explore referenced files in the directory to perform the task more effectively."
 
     system_prompt = (
@@ -91,8 +91,8 @@ async def main():
         f"Current datetime: {current_datetime}. "
         f"Operating system: {operating_system}. "
         "You are encouraged to use tools extensively and perform research to answer user queries comprehensively. "
-        "Don't hesitate to use multiple tool calls or take multiple steps to solve a problem. "
-        f"{skills_text} "
+        "Don't hesitate to use multiple tool calls or take multiple steps to solve a problem. \n\n"
+        f"{skills_text} \n\n"
         "Generate a helpful, thorough, and precise response optimized for reading aloud."
         "Avoid complex sentence structures or visual formatting that cannot be spoken. Output as a single block of plain text."
         "Do not use Markdown, bolding, headers, bullet points, or numbered lists."

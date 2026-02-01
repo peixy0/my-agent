@@ -229,7 +229,7 @@ def register_tools(llm_client: LLMBase, console: Console, whitelist: list[str]):
             "properties": {
                 "skill_name": {
                     "type": "string",
-                    "description": "The name of the skill to load.",
+                    "description": "The name of the skill to use.",
                 }
             },
             "required": ["skill_name"],
@@ -237,8 +237,8 @@ def register_tools(llm_client: LLMBase, console: Console, whitelist: list[str]):
     )
     async def use_skill(skill_name: str) -> dict[str, Any]:
         """
-        Load the full instructions for a specific skill.
-        Use this when you identify a relevant skill from your available skills list and need detailed instructions on how to apply it.
+        Gain knowledge of a specific skill.
+        Use this when you identify a relevant skill from your available skills list.
         """
         allow, reason = approve_tool(
             use_skill.__name__, f"use skill [bold]{skill_name}[/bold]"

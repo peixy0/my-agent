@@ -66,15 +66,11 @@ class SkillLoader:
                 content = skill_file.read_text(encoding="utf-8")
                 data = self._parse_frontmatter(content)
                 if data.get("name") == name:
-                    # Instructions are everything after the frontmatter
-                    instructions = re.sub(
-                        r"^---\s*\n.*?\n---\s*\n", "", content, flags=re.DOTALL
-                    ).strip()
                     skill = Skill(
                         name=name,
                         skill_dir=str(skill_file.parent),
                         description=data.get("description", ""),
-                        instructions=instructions,
+                        instructions=content,
                     )
                     self._cache[name] = skill
                     return skill
@@ -98,14 +94,6 @@ class SkillLoader:
             key, value = line.split(":", 1)
             key = key.strip()
             value = value.strip()
-            # Handle lists like ["a", "b"]
-            if value.startswith("[") and value.endswith("]"):
-                value = [
-                    v.strip().strip('"').strip("'")
-                    for v in value[1:-1].split(",")
-                    if v.strip()
-                ]
-            else:
-                value = value.strip('"').strip("'")
+            value = value.strip('"').strip("'")
             data[key] = value
         return data
