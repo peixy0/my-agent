@@ -1,67 +1,148 @@
-# LLM Agent
+# Autonomous LLM Agent
 
-This project provides a system-level LLM agent that can assist you with running commands, managing files, and solving problems on your local system. The agent features a modular architecture with specialized skills and audio feedback.
+An autonomous LLM agent that runs on the host machine and uses a container as an isolated workspace environment.
 
-## Features
+## Architecture
 
-*   **Natural Language Interaction:** Interact with the agent using natural language in a powerful CLI.
-*   **Command Execution:** The agent can execute shell commands on your system.
-*   **Web Research:** Perform web searches using DuckDuckGo and fetch content from web pages.
-*   **File Management:** Read, write, and edit files on the local filesystem.
-*   **Specialized Skills:** Extensible "skills" system for complex task instructions.
-*   **Audio Feedback:** Responses are read aloud using local TTS (optimized for speech).
-*   **User Confirmation:** Optional tool whitelisting for auto-approval; otherwise, prompts for confirmation before side effects.
-*   **Slash Commands:** Terminal commands like `/exit` and `/clear`.
+- **Agent runs on host**: The Python agent runs on your machine
+- **Container as workspace**: Commands and file operations execute in a container at `/workspace`
+- **Persistent storage**: Workspace is bind-mounted for persistence
 
-## Getting Started
+## Quick Start
 
 ### Prerequisites
 
-*   Python 3.10 or later
-*   `uv` for project management
-*   System libraries for `pyaudio` (e.g., `portaudio`)
-*   A Piper TTS model file (for audio feedback)
+- Python 3.10+
+- `uv` for dependency management
+- Podman (or Docker)
 
-### Installation
-
-1.  Clone the repository.
-2.  Install the dependencies using `uv`:
-
-    ```bash
-    uv pip install -e .
-    ```
-
-3.  Create a `.env` file in the root of the project and add the following:
-
-    ```
-    OPENAI_BASE_URL=your_url
-    OPENAI_MODEL=your_model
-    OPENAI_API_KEY=your_key
-    TTS_MODEL_PATH=path/to/voice.onnx
-    ```
-
-### Usage
-
-To start the agent:
+### Setup
 
 ```bash
-python -m agent.main
+# Clone and install dependencies
+cd sys-agent
+uv sync --group dev
+
+# Create .env file
+cp .env.example .env
+# Edit .env with your OpenAI API key
+
+# Build the workspace container
+./build-container.sh
+
+# Start the workspace container
+./run-container.sh
 ```
 
-Type `/exit` to end or `/clear` to reset history.
+### Run the Agent
+
+```bash
+# Run the autonomous agent
+uv run python -m agent.main
+```
+
+The agent will:
+1. Ensure the workspace container is running
+2. Wake up every 15 minutes (configurable)
+3. Work on tasks from its TODO list
+4. Maintain context across wake cycles
+5. Keep a daily journal
+
+## Configuration
+
+Create a `.env` file:
+
+```env
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_MODEL=gpt-4o
+OPENAI_API_KEY=your_api_key_here
+
+# Optional: Container settings
+CONTAINER_NAME=sys-agent-workspace
+CONTAINER_RUNTIME=podman
+
+# Optional: Adjust wake interval (seconds)
+WAKE_INTERVAL_SECONDS=900
+```
+
+## Workspace
+
+The workspace persists in `./workspace/` and is mounted into the container:
+
+```
+workspace/
+├── CONTEXT          # Persistent context
+├── TODO             # Task list
+├── journal/         # Daily journals
+│   └── 2026-02-04.md
+├── .skills/         # Custom skills
+└── events.jsonl     # Event log
+```
 
 ## Tools
 
-Built-in tools include:
+| Tool | Description |
+|------|-------------|
+| `run_command` | Execute shell commands |
+| `read_file` | Read file content |
+| `write_file` | Write to files |
+| `edit_file` | Edit file content |
+| `web_search` | Search the web |
+| `fetch` | Fetch web pages |
+| `use_skill` | Load skill instructions |
 
-*   **`run_command`**: Executes a shell command.
-*   **`web_search`**: Performs a web search.
-*   **`fetch`**: Fetches content from a URL.
-*   **`read_file`**: Reads content from a file.
-*   **`write_file`**: Writes content to a file.
-*   **`edit_file`**: Edits specific parts of a file.
-*   **`use_skill`**: Loads instructions for specialized skills.
+## Skills
 
-## Contributing
+Add custom skills to `workspace/.skills/`:
 
-Contributions are welcome! Please open an issue or submit a pull request.
+```
+workspace/.skills/my-skill/
+└── SKILL.md
+```
+
+Format:
+```markdown
+---
+name: my-skill
+description: What this skill does
+---
+
+# Instructions
+...
+```
+
+## Development
+
+```bash
+# Install dev dependencies
+uv sync --group dev
+
+# Run tests
+uv run pytest tests/ -v
+
+# Type checking
+uv run pyright agent/
+
+# Linting
+uv run ruff check agent/
+```
+
+## Container Commands
+
+```bash
+# Start workspace container
+./run-container.sh
+
+# Execute commands in container
+podman exec -it sys-agent-workspace bash
+
+# Stop container
+podman stop sys-agent-workspace
+
+# Remove container
+podman rm -f sys-agent-workspace
+```
+
+## License
+
+MIT License

@@ -2,7 +2,8 @@ import json
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable
 from typing import Any, Callable
-from rich.console import Console
+
+from agent.core.events import AgentEvents, OutputType
 
 
 class LLMBase(ABC):
@@ -40,7 +41,7 @@ class LLMBase(ABC):
         raise NotImplementedError
 
     async def chat(
-        self, messages: list[dict[str, str]], console: Console, max_iterations: int = 50
+        self, messages: list[dict[str, str]], agent_events: AgentEvents, max_iterations: int = 50
     ) -> str:
         """
         Sends a chat message to the LLM and handles the response.
@@ -49,6 +50,7 @@ class LLMBase(ABC):
 
         Args:
             messages: A list of messages in the chat history.
+            agent_events: Event system for publishing agent events.
             max_iterations: The maximum number of tool call iterations to perform.
 
         Returns:
@@ -70,7 +72,7 @@ class LLMBase(ABC):
 
             if message.tool_calls:
                 if message.content:
-                    console.print(f"[bold blue]Agent (thought):[/bold blue] {message.content}")
+                    await agent_events.publish(OutputType.THOUGHT, {"content": message.content})
 
                 tool_messages: list[dict[str, str]] = []
                 for tool_call in message.tool_calls:
@@ -100,6 +102,10 @@ class LLMBase(ABC):
                             "tool_call_id": tool_id,
                             "content": json.dumps(result, ensure_ascii=False),
                         }
+                    )
+                    await agent_events.publish(
+                        OutputType.TOOL_RESULT,
+                        {"tool_call_id": tool_id, "name": tool_name, "result": result},
                     )
 
                 messages.extend(tool_messages)

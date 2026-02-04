@@ -11,7 +11,7 @@ from tenacity import (
 )
 from typing_extensions import override
 
-from .llm_base import LLMBase
+from agent.llm.base import LLMBase
 
 logger = logging.getLogger(__name__)
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .llm_base import LLMBase
+from agent.llm.base import LLMBase
 
 
 class LLMFactory:
@@ -13,6 +13,6 @@ class LLMFactory:
         """
         Return an LLM client implementation based on the base URL prefix.
         """
-        from .llm_openai import LLMClient
+        from agent.llm.openai import LLMClient
 
         return LLMClient(url=url, model=model, api_key=api_key)

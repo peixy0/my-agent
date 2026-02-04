@@ -1,138 +1,160 @@
 import asyncio
-import datetime
 import logging
-import platform
+import signal
+from datetime import datetime
+from pathlib import Path
+from types import FrameType
+from typing import Final
 
-from dotenv import load_dotenv
-from rich.console import Console
+from agent.core.agent import Agent
+from agent.core.events import AgentEvents
+from agent.core.event_logger import EventLogger
+from agent.core.settings import settings
+from agent.llm.factory import LLMFactory
+from agent.tools.command_executor import ensure_container_running
 
-from . import tools
-from .audio import TTS
-from .llm_factory import LLMFactory
-from .settings import settings
-from .skill_loader import SkillLoader
-
-_ = load_dotenv()
 
 logger = logging.getLogger(__name__)
 
 
-def cli():
+class AutonomousRunner:
     """
-    The main command-line interface for the LLM agent.
+    Long-running autonomous agent that wakes up at regular intervals.
+    
+    The runner ensures the workspace container is available before
+    each wake cycle and handles graceful shutdown.
     """
-    asyncio.run(main())
 
+    agent: Final[Agent]
+    event_logger: Final[EventLogger]
+    running: bool
 
-def handle_slash_command(
-    prompt: str, console: Console, system_prompt: str, messages: list[dict[str, str]]
-) -> tuple[bool, bool, list[dict[str, str]]]:
-    """
-    Handle commands starting with '/'.
+    def __init__(self, agent: Agent, event_logger: EventLogger):
+        self.agent = agent
+        self.event_logger = event_logger
+        self.running = True
 
-    Returns a tuple:
-        (handled, should_exit, updated_messages)
-    """
-    if not prompt.startswith("/"):
-        return False, False, messages
+    def _setup_signal_handlers(self) -> None:
+        """Set up graceful shutdown on SIGTERM/SIGINT."""
 
-    command, *_ = prompt[1:].split(maxsplit=1)
-    command = command.lower()
+        def signal_handler(signum: int, frame: FrameType | None) -> None:
+            _ = frame
+            logger.info(f"Received signal {signum}, shutting down gracefully...")
+            self.running = False
 
-    if command == "exit":
-        return True, True, messages
-    if command == "clear":
-        # Reset conversation history and clear the console output
-        messages = [{"role": "system", "content": system_prompt}]
-        console.clear()
-        console.print(
-            "[bold green]History cleared. You are starting a new conversation.[/bold green]"
+        _ = signal.signal(signal.SIGTERM, signal_handler)
+        _ = signal.signal(signal.SIGINT, signal_handler)
+
+    async def _ensure_container(self) -> bool:
+        """Ensure the workspace container is running."""
+        return await ensure_container_running(
+            container_name=settings.container_name,
+            runtime=settings.container_runtime,
+            workspace_path=settings.workspace_dir,
         )
-        return True, False, messages
 
-    console.print(
-        f"[bold yellow]Unknown command:[/bold yellow] {prompt}. "
-        + "Supported commands: /exit, /clear"
+    async def run(self) -> None:
+        """Main loop: wake up, execute agent, sleep, repeat."""
+        self._setup_signal_handlers()
+
+        # Load wake count from file
+        wake_count_file = Path(settings.wake_count_file)
+        wake_count = 1
+        if wake_count_file.exists():
+            try:
+                wake_count = int(wake_count_file.read_text().strip())
+                logger.info(f"Loaded wake count: {wake_count}")
+            except (ValueError, Exception) as e:
+                logger.warning(f"Failed to read .wake_count: {e}")
+
+        # Ensure container is running before starting
+        if not await self._ensure_container():
+            logger.error("Failed to start workspace container. Exiting.")
+            return
+
+        logger.info("Autonomous agent starting...")
+        logger.info(f"Wake interval: {settings.wake_interval_seconds} seconds")
+        logger.info(f"Container: {settings.container_name}")
+
+        while self.running:
+            wake_time = datetime.now().astimezone().isoformat()
+
+            logger.info(f"=== Wake cycle #{wake_count} at {wake_time} ===")
+
+            try:
+                # Ensure container is still running
+                if not await self._ensure_container():
+                    logger.error("Container not available, skipping cycle")
+                    continue
+
+                # Reinitialize system prompt to reload context files
+                self.agent.initialize_system_prompt()
+
+                # Create autonomous wake prompt
+                prompt = (
+                    f"You are awake (wake cycle #{wake_count}). "
+                    "Review your CONTEXT and TODO, then work on your tasks. "
+                    "Remember to update your journal and context files."
+                )
+
+                logger.info(f"Executing agent with prompt: {prompt}")
+                await self.agent.run(prompt)
+
+                # Save wake count
+                wake_count += 1
+                try:
+                    _ = wake_count_file.write_text(str(wake_count))
+                except Exception as e:
+                    logger.error(f"Failed to save .wake_count: {e}")
+
+                logger.info(f"Wake cycle #{wake_count} completed")
+
+            except Exception as e:
+                logger.error(f"Error during wake cycle #{wake_count}: {e}", exc_info=True)
+
+            # Sleep until next wake cycle
+            if self.running:
+                logger.info(f"Sleeping for {settings.wake_interval_seconds} seconds...")
+                for _ in range(settings.wake_interval_seconds):
+                    if not self.running:
+                        break
+                    await asyncio.sleep(1)
+
+        logger.info("Autonomous agent stopped")
+
+
+async def main() -> None:
+    """Entry point for autonomous runner."""
+    # Set up logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
-    return True, False, messages
 
+    # Create components
+    agent_events = AgentEvents()
+    event_logger = EventLogger(
+        settings.event_log_file,
+        stream_url=settings.stream_api_url if settings.stream_events else None,
+        stream_api_key=settings.stream_api_key,
+        stream_enabled=settings.stream_events,
+    )
 
-async def main():
-    """
-    The main asynchronous function for the LLM agent.
-    """
-    console = Console()
-    console.print("[bold green]LLM Agent[/bold green]")
-    console.print("Type '/exit' to end the conversation, '/clear' to clear history.")
-
-    audio = TTS(settings.tts_model_path).create_audio()
     llm_client = LLMFactory.create(
         url=settings.openai_base_url,
         model=settings.openai_model,
         api_key=settings.openai_api_key,
     )
-    tools.register_tools(llm_client, console, settings.whitelist_tools)
 
-    current_datetime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    operating_system = platform.system()
+    agent = Agent(llm_client, agent_events, event_logger)
 
-    skill_loader = SkillLoader(settings.skills_dir)
-    skill_summaries = skill_loader.discover_skills()
-    skills_text = ""
-    if skill_summaries:
-        skills_text = "Available specialized skills:\n"
-        for s in skill_summaries:
-            skills_text += f"- {s.name}: {s.description}\n"
-        skills_text += "\nUse the `use_skill` tool to gain access to specific domain knowledge. You can use it at any time for any skills that are related to the task description."
-        skills_text += "Once you have the skill path, you are encouraged to explore referenced files in the directory to perform the task more effectively."
-
-    system_prompt = (
-        f"You are a helpful LLM agent. "
-        f"Current datetime: {current_datetime}. "
-        f"Operating system: {operating_system}. "
-        "You are encouraged to use tools extensively and perform research to answer user queries comprehensively. "
-        "Don't hesitate to use multiple tool calls or take multiple steps to solve a problem. \n\n"
-        f"{skills_text} \n\n"
-        "Generate a helpful, thorough, and precise response optimized for reading aloud."
-        "Avoid complex sentence structures or visual formatting that cannot be spoken. Output as a single block of plain text."
-        "Do not use Markdown, bolding, headers, bullet points, or numbered lists."
-    )
-
-    messages = [{"role": "system", "content": system_prompt}]
+    runner = AutonomousRunner(agent, event_logger)
 
     try:
-        while True:
-            prompt = console.input("> ")
-            handled, should_exit, messages = handle_slash_command(
-                prompt, console, system_prompt, messages
-            )
-            if should_exit:
-                break
-            if handled:
-                continue
-
-            messages.append({"role": "user", "content": prompt})
-            response = ""
-            try:
-                response = await llm_client.chat(messages, console)
-                console.print(f"[bold blue]Agent:[/bold blue] {response}")
-            except Exception as e:
-                response = f"An unexpected error occurred: {e}"
-                logger.error(response)
-                console.print(f"[bold red]Error:[/bold red] {e}")
-            finally:
-                messages.append({"role": "assistant", "content": response})
-            audio.feed(response)
-    except (KeyboardInterrupt, EOFError):
-        pass
-    except Exception as e:
-        logger.error(f"An unexpected error occurred: {e}")
-        console.print(f"[bold red]Error:[/bold red] {e}")
+        await runner.run()
     finally:
-        console.print("\n[bold red]Exiting...[/bold red]")
-        audio.stop()
-        audio.wait_until_done()
+        await event_logger.close()
 
 
 if __name__ == "__main__":
-    cli()
+    asyncio.run(main())

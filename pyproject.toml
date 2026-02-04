@@ -6,17 +6,19 @@ requires-python = ">=3.10"
 dependencies = [
     "openai",
     "pydantic-settings",
-    "python-dotenv",
     "ddgs",
     "rich",
     "trafilatura",
     "tenacity",
+    "aiohttp",
 ]
 
 [dependency-groups]
 dev = [
     "basedpyright>=1.36.0",
     "ruff>=0.14.7",
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
 ]
 
 [tool.pyright]
