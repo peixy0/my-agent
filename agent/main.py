@@ -44,6 +44,7 @@ class Scheduler:
 
     async def _schedule_heartbeat(self) -> None:
         """Background task to emit heartbeat events."""
+        logger.info(f"Sleeping for {settings.wake_interval_seconds} seconds")
         await asyncio.sleep(settings.wake_interval_seconds)
         await self.queue.put(HeartbeatEvent())
 
@@ -52,7 +53,7 @@ class Scheduler:
         self.agent.initialize_system_prompt()
 
         prompt = (
-            "You are awake."
+            "You are awake. "
             "Review your CONTEXT and TODO, then work on your tasks. "
             "Remember to update your journal and context files."
         )

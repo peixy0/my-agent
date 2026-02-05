@@ -16,9 +16,8 @@ RUN \
     curl \
     jq && \
     # 5. Restore the original file (send it back)
-    mv "$FILE.bak" "$FILE" && \
-    # 6. Clear the cache so the final image doesn't contain mirror metadata
-    rm -rf /var/lib/apt/lists/*
+    cp "$FILE" "$FILE.aliyun" && \
+    cp "$FILE.bak" "$FILE"
 
 # Set workspace as working directory
 WORKDIR /workspace

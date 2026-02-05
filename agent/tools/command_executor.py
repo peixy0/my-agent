@@ -136,7 +136,7 @@ class ContainerCommandExecutor(CommandExecutor):
         escaped_path = filepath.replace("'", "'\"'\"'")
 
         # Get total lines first
-        total_cmd = f"wc -l < '{escaped_path}'"
+        total_cmd = f"sed -n '$=' '{escaped_path}'"
         stdout, stderr, returncode = await self._exec_in_container(total_cmd)
 
         if returncode != 0:
