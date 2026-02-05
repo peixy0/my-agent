@@ -1,9 +1,10 @@
-import json
 import asyncio
+import json
 import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Final
+
 import aiohttp
 
 logger = logging.getLogger(__name__)
@@ -18,21 +19,18 @@ class EventLogger:
     log_file: Final[Path]
     stream_url: Final[str | None]
     stream_api_key: Final[str | None]
-    stream_enabled: Final[bool]
     _lock: Final[asyncio.Lock]
     _session: aiohttp.ClientSession | None
 
     def __init__(
         self,
-        log_file: str = "workspace/events.jsonl",
+        log_file: str = "events.jsonl",
         stream_url: str | None = None,
         stream_api_key: str | None = None,
-        stream_enabled: bool = True,
     ):
         self.log_file = Path(log_file)
         self.stream_url = stream_url
         self.stream_api_key = stream_api_key
-        self.stream_enabled = stream_enabled and stream_url is not None
         self._lock = asyncio.Lock()
         self._session = None
 
@@ -47,7 +45,9 @@ class EventLogger:
         if self._session and not self._session.closed:
             await self._session.close()
 
-    async def log_tool_use(self, tool_name: str, args: dict[str, Any], result: Any) -> None:
+    async def log_tool_use(
+        self, tool_name: str, args: dict[str, Any], result: Any
+    ) -> None:
         """Log a tool invocation event."""
         event = {
             "timestamp": datetime.now().astimezone().isoformat(),
@@ -73,11 +73,11 @@ class EventLogger:
 
     async def _post_to_api(self, event: dict[str, Any]) -> None:
         """Post event to remote API."""
-        if not self.stream_enabled or self.stream_url is None:
+        if not self.stream_url:
             return
-
         try:
             session = await self._get_session()
+
             headers = {
                 "x-api-key": self.stream_api_key or "",
                 "Content-Type": "application/json",
@@ -91,7 +91,9 @@ class EventLogger:
             ) as response:
                 if response.status >= 400:
                     body = await response.text()
-                    logger.warning(f"Failed to post event to API: {response.status} - {body}")
+                    logger.warning(
+                        f"Failed to post event to API: {response.status} - {body}"
+                    )
         except asyncio.TimeoutError:
             logger.warning("Timeout posting event to API")
         except Exception as e:
@@ -106,11 +108,12 @@ class EventLogger:
                 self.log_file.parent.mkdir(parents=True, exist_ok=True)
 
                 # Append event as JSON line
-                with open(self.log_file, "a") as f:
+                with self.log_file.open("a") as f:
                     _ = f.write(json.dumps(event) + "\n")
+
             except Exception as e:
                 logger.error(f"Failed to write event to file: {e}")
 
             # Post to remote API asynchronously (don't block on this)
-            if self.stream_enabled:
+            if self.stream_url:
                 _ = asyncio.create_task(self._post_to_api(event))

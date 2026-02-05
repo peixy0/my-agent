@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """
     Settings for the autonomous LLM agent.
-    
+
     The agent runs on the host machine while using a container
     as a workspace environment for command and file operations.
     """
@@ -27,7 +27,6 @@ class Settings(BaseSettings):
     journal_dir: str = "./workspace/journal"
     event_log_file: str = "./events.jsonl"
     skills_dir: str = "./workspace/.skills"
-    wake_count_file: str = "./.wake_count"
 
     # Autonomous mode settings
     wake_interval_seconds: int = 600  # 10 minutes
@@ -35,13 +34,12 @@ class Settings(BaseSettings):
     # Event streaming settings
     stream_api_url: str = ""
     stream_api_key: str = ""
-    stream_events: bool = False
 
     # Tool settings
     whitelist_tools: list[str] = []
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8"
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )
 
 

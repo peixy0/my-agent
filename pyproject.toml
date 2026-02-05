@@ -21,7 +21,18 @@ dev = [
     "pytest-asyncio>=0.24",
 ]
 
-[tool.pyright]
-reportAny = false
-reportExplicitAny = false
-reportUnknownMemberType = false
+[tool.ruff.lint]
+select = ["F", "E", "W", "I", "UP", "B", "SIM", "PTH"]
+ignore = ["E501", "W191", "ANN401"]
+
+fixable = ["ALL"]
+unfixable = []
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+
+[tool.basedpyright]
+typeCheckingMode = "standard"
+include = ["agent", "tests"]

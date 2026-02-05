@@ -1,6 +1,5 @@
 """Tests for SkillLoader."""
 
-
 from agent.tools.skill_loader import SkillLoader
 
 
@@ -84,7 +83,7 @@ Instructions
 """)
 
         loader = SkillLoader(str(tmp_path))
-        
+
         # Load twice
         skill1 = loader.load_skill("cached-skill")
         skill2 = loader.load_skill("cached-skill")

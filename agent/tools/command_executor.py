@@ -9,6 +9,7 @@ import asyncio
 import logging
 import shutil
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Any, Final, override
 
 logger = logging.getLogger(__name__)
@@ -45,7 +46,7 @@ class CommandExecutor(ABC):
 class ContainerCommandExecutor(CommandExecutor):
     """
     Executes commands inside a container.
-    
+
     This executor delegates all operations to a running container,
     allowing the agent to work in an isolated workspace environment.
     """
@@ -68,9 +69,7 @@ class ContainerCommandExecutor(CommandExecutor):
     def _validate_runtime(self) -> None:
         """Validate that the container runtime is available."""
         if not shutil.which(self.runtime):
-            raise RuntimeError(
-                f"Container runtime '{self.runtime}' not found in PATH"
-            )
+            raise RuntimeError(f"Container runtime '{self.runtime}' not found in PATH")
 
     async def _exec_in_container(self, command: str) -> tuple[str, str, int]:
         """Execute a command in the container and return stdout, stderr, returncode."""
@@ -214,10 +213,9 @@ async def ensure_container_running(
 ) -> bool:
     """
     Ensure the workspace container is running.
-    
+
     Returns True if container is running (or was started), False on error.
     """
-    import os
 
     # Check if container exists and is running
     check_cmd = [runtime, "ps", "-q", "-f", f"name=^{container_name}$"]
@@ -250,8 +248,8 @@ async def ensure_container_running(
         return process.returncode == 0
 
     # Container doesn't exist, create it
-    abs_workspace = os.path.abspath(workspace_path)
-    os.makedirs(abs_workspace, exist_ok=True)
+    abs_workspace = Path(workspace_path).resolve()
+    abs_workspace.mkdir(parents=True, exist_ok=True)
 
     logger.info(f"Creating container '{container_name}'")
     run_cmd = [

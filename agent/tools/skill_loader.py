@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -77,7 +76,7 @@ class SkillLoader:
                     description = data.get("description", "")
                     if not isinstance(description, str):
                         description = str(description)
-                    
+
                     skill = Skill(
                         name=name,
                         skill_dir=str(skill_file.parent),

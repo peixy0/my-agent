@@ -21,5 +21,4 @@ def mock_settings():
         event_log_file="/tmp/test-workspace/events.jsonl",
         skills_dir="/tmp/test-workspace/.skills",
         wake_interval_seconds=60,
-        stream_events=False,
     )

@@ -10,10 +10,9 @@ from typing import Any, cast
 import trafilatura
 from ddgs import DDGS
 
-from agent.tools.skill_loader import SkillLoader
-from agent.tools.command_executor import CommandExecutor, ContainerCommandExecutor
 from agent.core.settings import settings
-
+from agent.tools.command_executor import CommandExecutor, ContainerCommandExecutor
+from agent.tools.skill_loader import SkillLoader
 
 # Module-level executor instance (initialized lazily)
 _executor: CommandExecutor | None = None
@@ -39,7 +38,7 @@ def set_executor(executor: CommandExecutor) -> None:
 async def run_command(command: str) -> dict[str, Any]:
     """
     Executes a shell command in the workspace container.
-    
+
     Use this tool to explore the filesystem, run scripts, or execute
     any shell command. The command runs in /workspace inside the container.
     """
@@ -50,7 +49,7 @@ async def run_command(command: str) -> dict[str, Any]:
 async def web_search(query: str) -> dict[str, Any]:
     """
     Performs a web search using DuckDuckGo.
-    
+
     Returns a list of search results with titles, URLs, and snippets.
     """
     try:
@@ -64,7 +63,7 @@ async def web_search(query: str) -> dict[str, Any]:
 async def fetch(url: str) -> dict[str, Any]:
     """
     Fetches and extracts the main content from a web page.
-    
+
     Returns the extracted text content from the URL.
     """
     try:
@@ -78,7 +77,7 @@ async def fetch(url: str) -> dict[str, Any]:
 async def write_file(filename: str, content: str) -> dict[str, Any]:
     """
     Write content to a file in the workspace container.
-    
+
     The filename should be relative to /workspace or an absolute path.
     Parent directories will be created if they don't exist.
     """
@@ -89,7 +88,7 @@ async def write_file(filename: str, content: str) -> dict[str, Any]:
 async def read_file(filename: str, start_line: int = 1) -> dict[str, Any]:
     """
     Read content from a file in the workspace container.
-    
+
     The filename should be relative to /workspace or an absolute path.
     Returns max 200 lines. Use start_line to read further.
     """
@@ -100,7 +99,7 @@ async def read_file(filename: str, start_line: int = 1) -> dict[str, Any]:
 async def edit_file(filename: str, original: str, replaced: str) -> dict[str, Any]:
     """
     Edit content of a file by replacing text.
-    
+
     Finds the 'original' text in the file and replaces it with 'replaced'.
     Use read_file first to verify the exact content to replace.
     """
@@ -111,7 +110,7 @@ async def edit_file(filename: str, original: str, replaced: str) -> dict[str, An
 async def use_skill(skill_name: str) -> dict[str, Any]:
     """
     Load instructions for a specialized skill.
-    
+
     Use this when you identify a relevant skill from your available skills list.
     Skills provide detailed instructions for specific tasks.
     """

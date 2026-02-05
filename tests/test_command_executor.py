@@ -1,11 +1,12 @@
 """Tests for CommandExecutor implementations."""
 
-import pytest
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
 from agent.tools.command_executor import (
-    ContainerCommandExecutor,
     CommandExecutor,
+    ContainerCommandExecutor,
 )
 
 
@@ -20,9 +21,11 @@ class TestContainerCommandExecutor:
 
     def test_init_validates_runtime(self):
         """Verify runtime validation on init."""
-        with patch("shutil.which", return_value=None):
-            with pytest.raises(RuntimeError, match="not found in PATH"):
-                ContainerCommandExecutor("test-container", runtime="nonexistent")
+        with (
+            patch("shutil.which", return_value=None),
+            pytest.raises(RuntimeError, match="not found in PATH"),
+        ):
+            ContainerCommandExecutor("test-container", runtime="nonexistent")
 
     @pytest.mark.asyncio
     async def test_execute_success(self):
@@ -72,7 +75,10 @@ class TestContainerCommandExecutor:
         mock_process_sed.communicate.return_value = (b"line 1\nline 2\n", b"")
         mock_process_sed.returncode = 0
 
-        with patch("asyncio.create_subprocess_exec", side_effect=[mock_process_wc, mock_process_sed]):
+        with patch(
+            "asyncio.create_subprocess_exec",
+            side_effect=[mock_process_wc, mock_process_sed],
+        ):
             result = await executor.read_file("test.txt", start_line=1, limit=2)
 
         assert result["status"] == "success"
@@ -111,7 +117,10 @@ class TestContainerCommandExecutor:
         mock_process_sed.communicate.return_value = (b"different content", b"")
         mock_process_sed.returncode = 0
 
-        with patch("asyncio.create_subprocess_exec", side_effect=[mock_process_wc, mock_process_sed]):
+        with patch(
+            "asyncio.create_subprocess_exec",
+            side_effect=[mock_process_wc, mock_process_sed],
+        ):
             result = await executor.edit_file("test.txt", "original", "replaced")
 
         assert result["status"] == "error"

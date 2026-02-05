@@ -7,16 +7,16 @@ and context management for the autonomous agent.
 
 import datetime
 import logging
-import os
 import platform
-from typing import Any, Callable, Final
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any, Final
 
-from agent.core.events import AgentEvents, OutputType
 from agent.core.event_logger import EventLogger
 from agent.core.settings import Settings, settings
 from agent.llm.base import LLMBase
-from agent.tools.skill_loader import SkillLoader
 from agent.tools import toolbox
+from agent.tools.skill_loader import SkillLoader
 
 logger = logging.getLogger(__name__)
 
@@ -24,13 +24,13 @@ logger = logging.getLogger(__name__)
 class Agent:
     """
     Core agent class that manages LLM interactions and tool execution.
-    
+
     The agent runs on the host machine and delegates command/file operations
     to a workspace container via the toolbox functions.
     """
 
     llm_client: Final[LLMBase]
-    agent_events: Final[AgentEvents]
+
     event_logger: Final[EventLogger | None]
     settings: Final[Settings]
     messages: list[dict[str, str]]
@@ -39,12 +39,11 @@ class Agent:
     def __init__(
         self,
         llm_client: LLMBase,
-        agent_events: AgentEvents,
         event_logger: EventLogger | None = None,
         agent_settings: Settings | None = None,
     ):
         self.llm_client = llm_client
-        self.agent_events = agent_events
+
         self.event_logger = event_logger
         self.settings = agent_settings or settings
         self.messages = []
@@ -205,17 +204,19 @@ class Agent:
 
     def _load_context_file(self, filepath: str, default_content: str = "") -> str:
         """Load content from a context file on the host filesystem."""
+        path = Path(filepath)
         try:
-            with open(filepath, "r") as f:
+            with path.open() as f:
                 content = f.read().strip()
                 return content if content else default_content
         except FileNotFoundError:
             try:
-                os.makedirs(os.path.dirname(filepath), exist_ok=True)
-                with open(filepath, "w") as f:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                with path.open("w") as f:
                     _ = f.write(default_content)
                 logger.info(f"Created context file: {filepath}")
                 return default_content
+
             except Exception as e:
                 logger.warning(f"Could not create context file {filepath}: {e}")
                 return default_content
@@ -253,13 +254,9 @@ class Agent:
         self.system_prompt = f"""You are an autonomous agent. Current datetime: {current_datetime}. Host OS: {operating_system}.
 You wake up periodically to perform tasks.
 
-## Architecture
-- You run on the host machine
-- Commands and file operations execute in a container at /workspace
-- The workspace is persisted between runs
-
 ## Your Workspace Files
-Maintain these files as your long-term memory. Be concise but thorough.
+You cwd is /workspace folder.
+The workspace is persisted between runs. Maintain these files as your long-term memory between wakeups.
 
 ### CONTEXT
 {context}
@@ -274,7 +271,7 @@ Keep a daily journal at `journal/{current_date}.md`. Document what you did, lear
 
 ## Goals
 1. Work on your TODO list.
-2. Maintain CONTEXT and TODO: iterate and refine them frequently to keep them concise but thorough. Do not append indefinitely; refactor when they grow too large.
+2. Maintain CONTEXT and TODO: iterate and refine them frequently to keep them concise and relatively short. Do not append indefinitely; refactor when they grow too large.
 3. Keep your daily journal updated.
 4. Be autonomous - find ways to improve and discover new information and opportunities.
 5. Learn, explore, and expand your knowledge base.
@@ -290,16 +287,14 @@ Use your tools extensively. Be proactive and productive."""
         self.messages.append({"role": "user", "content": user_prompt})
         response = ""
         try:
-            response = await self.llm_client.chat(self.messages, self.agent_events)
+            response = await self.llm_client.chat(self.messages)
 
             if self.event_logger:
                 await self.event_logger.log_llm_response(response)
-
-            await self.agent_events.publish(OutputType.RESPONSE, {"content": response})
         except Exception as e:
             logger.error(f"Error in agent run: {e}")
-            await self.agent_events.publish(OutputType.ERROR, {"message": str(e)})
             response = f"Error: {e}"
+
         finally:
             self.messages.append({"role": "assistant", "content": response})
 
