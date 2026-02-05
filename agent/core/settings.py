@@ -22,8 +22,8 @@ class Settings(BaseSettings):
 
     # Workspace paths (relative to host, mapped to /workspace in container)
     workspace_dir: str = "./workspace"
-    context_file: str = "./workspace/CONTEXT"
-    todo_file: str = "./workspace/TODO"
+    context_file: str = "./workspace/CONTEXT.md"
+    todo_file: str = "./workspace/TODO.md"
     journal_dir: str = "./workspace/journal"
     event_log_file: str = "./events.jsonl"
     skills_dir: str = "./workspace/.skills"

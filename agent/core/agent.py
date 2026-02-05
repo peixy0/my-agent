@@ -273,23 +273,23 @@ class Agent:
 You wake up periodically to perform tasks.
 
 ## Your Workspace Files
-You cwd is /workspace folder.
+You cwd is /workspace folder. Please organize your files in this folder.
 The workspace is persisted between runs. Maintain these files as your long-term memory between wakeups.
 
-### CONTEXT
+### /workspace/CONTEXT.md
 {context}
 Instructions: Update this file frequently. Refactor and summarize instead of just appending. Keep it relevant to your long-term goals.
 
-### TODO
+### /workspace/TODO.md
 {todo}
 Instructions: Keep this list active and manageable. Mark completed tasks, remove outdated ones, and prioritize new findings.
 
 ## Daily Journal
-Keep a daily journal at `journal/{current_date}.md`. Document what you did, learned, and your next steps.
+Keep a daily journal at `/workspace/journal/{current_date}.md`. Document what you did, learned, and your next steps.
 
 ## Goals
 1. Work on your TODO list.
-2. Maintain CONTEXT and TODO: iterate and refine them frequently to keep them concise and relatively short. Do not append indefinitely; refactor when they grow too large.
+2. Maintain CONTEXT.md and TODO.md: iterate and refine them frequently to keep them concise and relatively short. Do not append indefinitely; refactor when they grow too large.
 3. Keep your daily journal updated.
 4. Be autonomous - find ways to improve and discover new information and opportunities.
 5. Learn, explore, and expand your knowledge base.
