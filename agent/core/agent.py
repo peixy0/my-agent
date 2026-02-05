@@ -5,6 +5,7 @@ The Agent class orchestrates LLM interactions, tool registration,
 and context management for the autonomous agent.
 """
 
+import asyncio
 import datetime
 import logging
 import platform
@@ -62,13 +63,30 @@ class Agent:
                 logger.info(f"Executing tool: {tool_name} with args: {kwargs}")
 
                 try:
-                    result = await func(**kwargs)
+                    result = await asyncio.wait_for(
+                        func(**kwargs), timeout=settings.tool_timeout
+                    )
                     logger.info(f"Tool {tool_name} completed successfully")
 
                     if self.event_logger:
                         await self.event_logger.log_tool_use(tool_name, kwargs, result)
 
                     return result
+                except asyncio.TimeoutError:
+                    logger.error(
+                        f"Tool {tool_name} timed out after {settings.tool_timeout}s"
+                    )
+                    error_result = {
+                        "status": "error",
+                        "message": f"Tool {tool_name} timed out after {settings.tool_timeout}s",
+                    }
+
+                    if self.event_logger:
+                        await self.event_logger.log_tool_use(
+                            tool_name, kwargs, error_result
+                        )
+
+                    return error_result
                 except Exception as e:
                     logger.error(f"Tool {tool_name} failed: {e}")
                     error_result = {"status": "error", "message": str(e)}

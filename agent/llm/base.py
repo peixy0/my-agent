@@ -94,7 +94,6 @@ class LLMBase(ABC):
                     args: dict[str, Any] = json.loads(tool_call.function.arguments)
                     try:
                         result: dict[str, Any] = await self.handlers[tool_name](**args)
-
                     except Exception as e:
                         result = {"error": f"Exception occured during tool call: {e}"}
 

@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     stream_api_url: str = ""
     stream_api_key: str = ""
 
-    command_timeout: int = 30
+    tool_timeout: int = 30
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
