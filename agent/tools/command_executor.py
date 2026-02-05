@@ -84,7 +84,7 @@ class ContainerCommandExecutor(CommandExecutor):
             self.workdir,
             self.container_name,
             "bash",
-            "-i",
+            "-l",
             "-c",
             command,
         ]
