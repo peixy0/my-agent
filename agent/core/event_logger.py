@@ -87,7 +87,7 @@ class EventLogger:
                 self.stream_url,
                 json=event,
                 headers=headers,
-                timeout=aiohttp.ClientTimeout(total=5),
+                timeout=aiohttp.ClientTimeout(total=20),
             ) as response:
                 if response.status >= 400:
                     body = await response.text()
