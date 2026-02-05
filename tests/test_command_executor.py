@@ -41,7 +41,7 @@ class TestContainerCommandExecutor:
             result = await executor.execute("ls -la")
 
         assert result["status"] == "success"
-        assert result["output"] == "output\n"
+        assert result["stdout"] == "output\n"
 
     @pytest.mark.asyncio
     async def test_execute_failure(self):
@@ -59,6 +59,31 @@ class TestContainerCommandExecutor:
         assert result["status"] == "error"
         assert result["returncode"] == 1
         assert "error message" in result["stderr"]
+
+    @pytest.mark.asyncio
+    async def test_execute_timeout(self):
+        """Test command execution timeout."""
+        import asyncio
+
+        with patch("shutil.which", return_value="/usr/bin/podman"):
+            executor = ContainerCommandExecutor("test-container")
+
+        mock_process = AsyncMock()
+        # Mock communicate to raise TimeoutError
+        mock_process.communicate.side_effect = asyncio.TimeoutError()
+        mock_process.kill = AsyncMock()
+        mock_process.wait = AsyncMock()
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_process):
+            # We mock the internal timeout to be very small or rely on the mock side_effect
+            # In our implementation, we wrap communicate() with wait_for.
+            # If communicate() itself raises TimeoutError (mocked), it simulates the timeout.
+            result = await executor.execute("sleep 60")
+
+        assert result["status"] == "timeout"
+        assert "timed out" in result["message"]
+        mock_process.kill.assert_not_called()
+        mock_process.wait.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_read_file_success(self):

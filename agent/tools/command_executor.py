@@ -12,6 +12,8 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Final, override
 
+from agent.core.settings import settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -71,7 +73,9 @@ class ContainerCommandExecutor(CommandExecutor):
         if not shutil.which(self.runtime):
             raise RuntimeError(f"Container runtime '{self.runtime}' not found in PATH")
 
-    async def _exec_in_container(self, command: str) -> tuple[str, str, int]:
+    async def _exec_in_container(
+        self, command: str, timeout: int = settings.command_timeout
+    ) -> tuple[str, str, int]:
         """Execute a command in the container and return stdout, stderr, returncode."""
         full_command = [
             self.runtime,
@@ -92,12 +96,18 @@ class ContainerCommandExecutor(CommandExecutor):
             stderr=asyncio.subprocess.PIPE,
         )
 
-        stdout, stderr = await process.communicate()
-        return (
-            stdout.decode("utf-8", errors="replace"),
-            stderr.decode("utf-8", errors="replace"),
-            process.returncode or 0,
-        )
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(), timeout=timeout
+            )
+            return (
+                stdout.decode("utf-8", errors="replace"),
+                stderr.decode("utf-8", errors="replace"),
+                process.returncode or 0,
+            )
+        except (asyncio.TimeoutError, TimeoutError):
+            logger.warning(f"Command timed out after {timeout}s, detaching: {command}")
+            raise
 
     @override
     async def execute(self, command: str) -> dict[str, Any]:
@@ -113,8 +123,17 @@ class ContainerCommandExecutor(CommandExecutor):
                     "stderr": stderr,
                 }
 
-            return {"status": "success", "output": stdout}
+            return {
+                "status": "success",
+                "stdout": stdout,
+                "stderr": stderr,
+            }
 
+        except (asyncio.TimeoutError, TimeoutError):
+            return {
+                "status": "timeout",
+                "message": "Command execution timed out.",
+            }
         except Exception as e:
             logger.error(f"Command execution failed: {e}")
             return {"status": "error", "message": str(e)}
