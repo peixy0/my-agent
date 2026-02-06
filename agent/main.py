@@ -38,6 +38,7 @@ class Scheduler:
     running: bool
     queue: asyncio.Queue
     heartbeat_task: asyncio.Task[None] | None
+    last_response: str
 
     def __init__(self, agent: Agent, queue: asyncio.Queue, event_logger: EventLogger):
         self.agent = agent
@@ -45,6 +46,7 @@ class Scheduler:
         self.running = True
         self.queue = queue
         self.heartbeat_task = None
+        self.last_response = ""
 
     async def _ensure_container(self) -> bool:
         """Ensure the workspace container is running."""
@@ -62,7 +64,7 @@ class Scheduler:
 
     async def _process_heartbeat(self) -> None:
         """Process heartbeat event."""
-        self.agent.initialize_system_prompt()
+        self.agent.initialize_system_prompt(self.last_response)
 
         prompt = (
             "You are awake. "
@@ -71,12 +73,12 @@ class Scheduler:
         )
 
         logger.info(f"Executing agent with prompt: {prompt}")
-        await self.agent.run(prompt)
+        self.last_response = await self.agent.run(prompt)
         logger.info("Wake cycle completed")
 
     async def _process_human_input(self, content: str) -> None:
         """Process human input event."""
-        self.agent.initialize_system_prompt()
+        self.agent.initialize_system_prompt(self.last_response)
 
         prompt = (
             "You are awake. "
@@ -85,7 +87,7 @@ class Scheduler:
         )
 
         logger.info(f"Executing agent with prompt: {prompt}")
-        await self.agent.run(prompt)
+        self.last_response = await self.agent.run(prompt, max_iterations=200)
         logger.info("Wake cycle completed")
 
     async def run(self) -> None:
@@ -109,21 +111,19 @@ class Scheduler:
                 logger.error("Container not available, skipping event")
                 continue
 
-            if isinstance(event, HeartbeatEvent):
-                wake_time = datetime.now().astimezone().isoformat()
-                logger.info(f"Wake cycle at {wake_time}")
-
-                try:
+            try:
+                if isinstance(event, HeartbeatEvent):
+                    wake_time = datetime.now().astimezone().isoformat()
+                    logger.info(f"Wake cycle at {wake_time}")
                     await self._process_heartbeat()
-                except Exception as e:
-                    logger.error(f"Error during wake cycle: {e}", exc_info=True)
 
-            if isinstance(event, HumanInputEvent):
-                logger.info(f"Received human input: {event.content}")
-                try:
+                if isinstance(event, HumanInputEvent):
+                    logger.info(f"Received human input: {event.content}")
                     await self._process_human_input(event.content)
-                except Exception as e:
-                    logger.error(f"Error processing human input: {e}", exc_info=True)
+
+            except Exception as e:
+                logger.error(f"Error during event processing: {e}", exc_info=True)
+                self.last_response = ""
 
             if self.heartbeat_task:
                 _ = self.heartbeat_task.cancel()

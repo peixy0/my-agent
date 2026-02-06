@@ -50,7 +50,6 @@ class Agent:
         self.messages = []
         self._register_default_tools()
         self.system_prompt = ""
-        self.initialize_system_prompt()
 
     def _register_default_tools(self) -> None:
         """Register the default tools from the toolbox."""
@@ -246,7 +245,7 @@ class Agent:
             logger.warning(f"Error reading context file {filepath}: {e}")
             return default_content
 
-    def initialize_system_prompt(self) -> None:
+    def initialize_system_prompt(self, last_response: str) -> None:
         """Initialize the system prompt with context and instructions."""
         now = datetime.datetime.now().astimezone()
         current_datetime = now.strftime("%Y-%m-%d %H:%M:%S %Z%z")
@@ -263,8 +262,17 @@ class Agent:
                 skills_text += f"- {s.name}: {s.description}\n"
             skills_text += "\nUse the `use_skill` tool for detailed instructions."
 
+        last_response_text = ""
+        if last_response:
+            last_response_text = f"""## Info from last cycle
+
+{last_response}
+"""
+
         self.system_prompt = f"""You are an autonomous agent. Current datetime: {current_datetime}. Host OS: {operating_system}.
 You wake up periodically to perform tasks.
+
+{last_response_text}
 
 ## Your Workspace Files
 You cwd is /workspace folder. Please organize your files in this folder.
@@ -288,23 +296,26 @@ Keep a daily journal at `/workspace/journal/{current_date}.md`. Document what yo
 
 {skills_text}
 
-Use your tools extensively. Be proactive and productive."""
+Use your tools extensively. Be proactive and productive.
+
+{last_response_text}
+"""
 
         self.messages = [{"role": "system", "content": self.system_prompt}]
 
-    async def run(self, user_prompt: str) -> None:
+    async def run(self, user_prompt: str, max_iterations: int = 50) -> str:
         """Run a single turn of the agent conversation."""
         self.messages.append({"role": "user", "content": user_prompt})
         response = ""
         try:
-            response = await self.llm_client.chat(self.messages)
+            response = await self.llm_client.chat(self.messages, max_iterations)
             await self.event_logger.log_llm_response(response)
         except Exception as e:
             logger.error(f"Error in agent run: {e}")
             response = f"Error: {e}"
-
         finally:
             self.messages.append({"role": "assistant", "content": response})
+        return response
 
     def clear_history(self) -> None:
         """Clear conversation history, keeping only the system prompt."""

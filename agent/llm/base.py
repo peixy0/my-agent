@@ -58,7 +58,9 @@ class LLMBase(ABC):
         Returns:
             The final content of the LLM's response.
         """
-        for _ in range(max_iterations):
+        current_iteration = 0
+        while True:
+            current_iteration += 1
             response = await self._do_completion(
                 model=self.model,
                 messages=messages,
@@ -80,6 +82,15 @@ class LLMBase(ABC):
                 for tool_call in message.tool_calls:
                     tool_name = tool_call.function.name
                     tool_id = tool_call.id
+                    if current_iteration > max_iterations:
+                        tool_messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tool_id,
+                                "content": "Error: max tool call iterations reached.",
+                            }
+                        )
+                        continue
 
                     if tool_name not in self.handlers:
                         tool_messages.append(
@@ -112,5 +123,3 @@ class LLMBase(ABC):
                 return message.content
 
             raise RuntimeError(f"Unexpected response: {response}")
-
-        raise TimeoutError("Exceeded max tool call iterations without final content.")

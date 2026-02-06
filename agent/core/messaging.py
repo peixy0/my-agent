@@ -1,9 +1,12 @@
 import asyncio
+import logging
 from dataclasses import dataclass
 
 import aiohttp
 
 from agent.core.settings import settings
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -67,6 +70,9 @@ class Messaging:
             token_data = await response.json()
             if token_data.get("errcode") == 0:
                 self.access_token = token_data.get("access_token")
+                logger.info("Token refreshed successfully")
+            else:
+                logger.error(f"Failed to refresh token: {token_data.get('errmsg')}")
 
     async def _message_to_human(self, message: str):
         """
@@ -93,10 +99,15 @@ class Messaging:
                 ) as response:
                     send_data = await response.json()
                     if send_data.get("errcode") != 0:
+                        logger.error(
+                            f"Failed to send message: {send_data.get('errmsg')}"
+                        )
                         return {"status": "error", "message": "Failed to send message"}
+                    logger.info("Message sent successfully")
                     return {"status": "success", "message": "Message sent."}
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"Failed to send message: {e}")
+            return {"status": "error", "message": "Failed to send message"}
 
 
 messaging = NullMessaging() if settings.mute_agent else Messaging()
