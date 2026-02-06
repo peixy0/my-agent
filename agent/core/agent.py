@@ -183,20 +183,30 @@ class Agent:
             {
                 "type": "object",
                 "properties": {
-                    "filename": {
+                    "filepath": {
                         "type": "string",
                         "description": "Path to the file (relative to /workspace or absolute).",
                     },
-                    "original": {
-                        "type": "string",
-                        "description": "The exact text to find and replace.",
-                    },
-                    "replaced": {
-                        "type": "string",
-                        "description": "The replacement text.",
+                    "edits": {
+                        "type": "array",
+                        "description": "A list of one or more search-and-replace operations to apply sequentially.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "search": {
+                                    "type": "string",
+                                    "description": "The exact snippet of code to look for. Must be a literal match, including whitespace and comments.",
+                                },
+                                "replace": {
+                                    "type": "string",
+                                    "description": "The new code to put in place of the search block.",
+                                },
+                            },
+                            "required": ["search", "replace"],
+                        },
                     },
                 },
-                "required": ["filename", "original", "replaced"],
+                "required": ["filepath", "edits"],
             },
         )
 

@@ -2,7 +2,8 @@ import asyncio
 from dataclasses import dataclass
 
 import aiohttp
-from settings import settings
+
+from agent.core.settings import settings
 
 
 @dataclass

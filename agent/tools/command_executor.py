@@ -37,7 +37,7 @@ class CommandExecutor(ABC):
 
     @abstractmethod
     async def edit_file(
-        self, filepath: str, original: str, replaced: str
+        self, filepath: str, edits: list[dict[str, str]]
     ) -> dict[str, Any]:
         """Edit content in a file by replacing original with replaced."""
         ...
@@ -193,25 +193,73 @@ class ContainerCommandExecutor(CommandExecutor):
 
     @override
     async def edit_file(
-        self, filepath: str, original: str, replaced: str
+        self, filepath: str, edits: list[dict[str, str]]
     ) -> dict[str, Any]:
-        """Edit content in a file by replacing original with replaced."""
-        # First read the file
+        """
+        Edit a file by replacing specific blocks of text.
+        """
         read_result = await self.read_file(filepath)
         if read_result["status"] != "success":
             return read_result
 
-        content: str = read_result["content"]
+        content = read_result["content"]
+        lines = content.splitlines(keepends=True)
 
-        if original not in content:
-            return {
-                "status": "error",
-                "message": "Original content not found in file. Use read_file to verify content.",
-            }
+        for edit in edits:
+            search_block = edit["search"]
+            replace_block = edit["replace"]
 
-        # Replace and write back
-        new_content = content.replace(original, replaced)
-        return await self.write_file(filepath, new_content)
+            # 1. Try exact match first
+            if search_block in content:
+                # Ensure it only occurs once to avoid ambiguity
+                if content.count(search_block) > 1:
+                    return {
+                        "status": "error",
+                        "message": f"Multiple occurrences of search block found in {filepath}. "
+                        "Please include more surrounding context to make it unique.",
+                    }
+                content = content.replace(search_block, replace_block, 1)
+                continue
+
+            # 2. Try 'flexible' matching (ignoring minor whitespace/indentation differences)
+            search_lines = search_block.splitlines()
+            found_index = -1
+
+            # Simple sliding window search
+            for i in range(len(lines) - len(search_lines) + 1):
+                window = lines[i : i + len(search_lines)]
+                # Compare normalized versions (stripped of trailing whitespace)
+                if all(
+                    w.rstrip() == s.rstrip()
+                    for w, s in zip(window, search_lines, strict=True)
+                ):
+                    if found_index != -1:
+                        return {
+                            "status": "error",
+                            "message": "Search block is not unique (even with flexible matching).",
+                        }
+                    found_index = i
+
+            if found_index != -1:
+                # Replace lines at found_index
+                new_lines = (
+                    lines[:found_index]
+                    + [
+                        replace_block
+                        + ("\n" if not replace_block.endswith("\n") else "")
+                    ]
+                    + lines[found_index + len(search_lines) :]
+                )
+                content = "".join(new_lines)
+            else:
+                # 3. If it fails, provide a helpful diff of why it failed
+                return {
+                    "status": "error",
+                    "message": f"Could not find exact match for search block in {filepath}. "
+                    "Ensure your SEARCH block is a literal copy of the file content.",
+                }
+
+        return await self.write_file(filepath, content)
 
 
 async def ensure_container_running(

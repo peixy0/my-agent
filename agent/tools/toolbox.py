@@ -109,15 +109,17 @@ async def read_file(filename: str, start_line: int = 1) -> dict[str, Any]:
     return await executor.read_file(filename, start_line=start_line)
 
 
-async def edit_file(filename: str, original: str, replaced: str) -> dict[str, Any]:
+async def edit_file(filepath: str, edits: list[dict[str, str]]) -> dict[str, Any]:
     """
-    Edit content of a file by replacing text.
+    Surgically edit a file by replacing specific blocks of text. Use this for precise code modifications.
 
-    Finds the 'original' text in the file and replaces it with 'replaced'.
-    Use read_file first to verify the exact content to replace.
+    Rules:
+    1. SEARCH block must match the file exactly (including indentation).
+    2. Provide just enough context in SEARCH to be unique.
+    3. If multiple changes are needed, provide multiple edit blocks.
     """
     executor = get_executor()
-    return await executor.edit_file(filename, original, replaced)
+    return await executor.edit_file(filepath, edits)
 
 
 async def use_skill(skill_name: str) -> dict[str, Any]:
