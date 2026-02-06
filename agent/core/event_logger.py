@@ -24,7 +24,7 @@ class EventLogger:
 
     def __init__(
         self,
-        log_file: str = "events.jsonl",
+        log_file: str,
         stream_url: str | None = None,
         stream_api_key: str | None = None,
     ):

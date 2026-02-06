@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from agent.core.event_logger import EventLogger
-from agent.core.settings import Settings, settings
+from agent.core.settings import Settings
 from agent.llm.base import LLMBase
 from agent.tools import toolbox
 from agent.tools.skill_loader import SkillLoader
@@ -32,7 +32,7 @@ class Agent:
 
     llm_client: Final[LLMBase]
 
-    event_logger: Final[EventLogger | None]
+    event_logger: Final[EventLogger]
     settings: Final[Settings]
     messages: list[dict[str, str]]
     system_prompt: str
@@ -40,16 +40,16 @@ class Agent:
     def __init__(
         self,
         llm_client: LLMBase,
-        event_logger: EventLogger | None = None,
-        agent_settings: Settings | None = None,
+        event_logger: EventLogger,
+        agent_settings: Settings,
     ):
         self.llm_client = llm_client
 
         self.event_logger = event_logger
-        self.settings = agent_settings or settings
+        self.settings = agent_settings
         self.messages = []
         self._register_default_tools()
-        self.system_prompt = ""  # Initialized in initialize_system_prompt
+        self.system_prompt = ""
         self.initialize_system_prompt()
 
     def _register_default_tools(self) -> None:
@@ -64,37 +64,31 @@ class Agent:
 
                 try:
                     result = await asyncio.wait_for(
-                        func(**kwargs), timeout=settings.tool_timeout
+                        func(**kwargs), timeout=self.settings.tool_timeout
                     )
                     logger.info(f"Tool {tool_name} completed successfully")
-
-                    if self.event_logger:
-                        await self.event_logger.log_tool_use(tool_name, kwargs, result)
+                    await self.event_logger.log_tool_use(tool_name, kwargs, result)
 
                     return result
                 except asyncio.TimeoutError:
                     logger.error(
-                        f"Tool {tool_name} timed out after {settings.tool_timeout}s"
+                        f"Tool {tool_name} timed out after {self.settings.tool_timeout}s"
                     )
                     error_result = {
                         "status": "error",
-                        "message": f"Tool {tool_name} timed out after {settings.tool_timeout}s",
+                        "message": f"Tool {tool_name} timed out after {self.settings.tool_timeout}s",
                     }
-
-                    if self.event_logger:
-                        await self.event_logger.log_tool_use(
-                            tool_name, kwargs, error_result
-                        )
+                    await self.event_logger.log_tool_use(
+                        tool_name, kwargs, error_result
+                    )
 
                     return error_result
                 except Exception as e:
                     logger.error(f"Tool {tool_name} failed: {e}")
                     error_result = {"status": "error", "message": str(e)}
-
-                    if self.event_logger:
-                        await self.event_logger.log_tool_use(
-                            tool_name, kwargs, error_result
-                        )
+                    await self.event_logger.log_tool_use(
+                        tool_name, kwargs, error_result
+                    )
 
                     return error_result
 
@@ -294,9 +288,7 @@ Use your tools extensively. Be proactive and productive."""
         response = ""
         try:
             response = await self.llm_client.chat(self.messages)
-
-            if self.event_logger:
-                await self.event_logger.log_llm_response(response)
+            await self.event_logger.log_llm_response(response)
         except Exception as e:
             logger.error(f"Error in agent run: {e}")
             response = f"Error: {e}"

@@ -151,7 +151,7 @@ async def main() -> None:
         api_key=settings.openai_api_key,
     )
 
-    agent = Agent(llm_client, event_logger)
+    agent = Agent(llm_client, event_logger, settings)
     runner = Scheduler(agent, agent_queue, event_logger)
     await runner.run()
 
