@@ -128,6 +128,22 @@ class ContainerCommandExecutor(CommandExecutor):
             logger.error(f"Command execution failed: {e}")
             return {"status": "error", "message": str(e)}
 
+    async def _read_whole_file(self, filepath: str) -> dict[str, Any]:
+        """Read entire content from a file in the container."""
+        escaped_path = filepath.replace("'", "'\"'\"'")
+        read_cmd = f"cat '{escaped_path}'"
+        stdout, stderr, returncode = await self._exec_in_container(read_cmd)
+
+        if returncode != 0:
+            return {"status": "error", "message": stderr.strip()}
+
+        content = stdout
+
+        return {
+            "status": "success",
+            "content": content,
+        }
+
     @override
     async def read_file(
         self, filepath: str, start_line: int = 1, limit: int = 200
@@ -198,7 +214,7 @@ class ContainerCommandExecutor(CommandExecutor):
         """
         Edit a file by replacing specific blocks of text.
         """
-        read_result = await self.read_file(filepath)
+        read_result = await self._read_whole_file(filepath)
         if read_result["status"] != "success":
             return read_result
 

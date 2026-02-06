@@ -103,6 +103,11 @@ class Scheduler:
         logger.info(f"Wake interval: {settings.wake_interval_seconds} seconds")
 
         await self.queue.put(HeartbeatEvent())
+        await self.queue.put(
+            HumanInputEvent(
+                content="Fetch latest tech news headlines and send them to me."
+            )
+        )
 
         while self.running:
             event = await self.queue.get()
