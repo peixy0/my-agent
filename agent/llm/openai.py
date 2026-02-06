@@ -41,7 +41,7 @@ class LLMClient(LLMBase):
 
     @retry(
         retry=retry_if_exception_type((InternalServerError, RateLimitError)),
-        wait=wait_exponential(multiplier=1, min=5, max=60),
+        wait=wait_exponential(multiplier=2, min=5, max=60),
         stop=stop_after_attempt(5),
         before_sleep=before_sleep_log(logger, logging.WARNING),
     )

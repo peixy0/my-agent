@@ -54,7 +54,7 @@ async def web_search(query: str) -> dict[str, Any]:
     Returns a list of search results with titles, URLs, and snippets.
     """
     try:
-        with cast(Any, DDGS()) as ddgs:
+        with cast(Any, DDGS(timeout=60)) as ddgs:
             results = [r for r in ddgs.text(query, max_results=7)]
             return {"status": "success", "results": results}
     except Exception as e:
@@ -71,18 +71,6 @@ async def fetch(url: str) -> dict[str, Any]:
         downloaded = trafilatura.fetch_url(url)
         output = trafilatura.extract(downloaded)
         return {"status": "success", "output": output}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-
-
-async def message_to_human(message: str) -> dict[str, Any]:
-    """
-    Send a message to human.
-    Use this tool ONLY when you are explicitly asked to respond to human.
-    """
-    try:
-        await messaging.send_message(message)
-        return {"status": "success", "message": "Message sent."}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -142,3 +130,13 @@ async def use_skill(skill_name: str) -> dict[str, Any]:
             "instructions": skill.instructions,
         },
     }
+
+
+async def message_to_human(message: str) -> dict[str, Any]:
+    """
+    Send a message to human.
+    You MUST NEVER use this tool to send work report, summary, or any automated message.
+    Use this tool ONLY when you are explicitly asked to respond to human.
+    """
+    await messaging.send_message(message)
+    return {"status": "success", "message": "Message sent."}

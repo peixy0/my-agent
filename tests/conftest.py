@@ -15,8 +15,6 @@ def mock_settings():
         container_name="test-container",
         container_runtime="podman",
         workspace_dir="/tmp/test-workspace",
-        context_file="/tmp/test-workspace/CONTEXT",
-        todo_file="/tmp/test-workspace/TODO",
         journal_dir="/tmp/test-workspace/journal",
         event_log_file="/tmp/test-workspace/events.jsonl",
         skills_dir="/tmp/test-workspace/.skills",

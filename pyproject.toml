@@ -12,6 +12,7 @@ dependencies = [
     "tenacity",
     "aiohttp",
     "aiocron",
+    "jsonschema>=4.26.0",
 ]
 
 [dependency-groups]

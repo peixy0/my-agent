@@ -4,6 +4,8 @@ from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+import jsonschema
+
 logger = logging.getLogger(__name__)
 
 
@@ -69,6 +71,12 @@ class LLMBase(ABC):
                     for fn in self.functions.values()
                 ],
                 tool_choice="auto",
+                extra_body={
+                    "chat_template_kwargs": {
+                        "enable_thinking": True,
+                        "clear_thinking": False,
+                    }
+                },
             )
 
             message = response.choices[0].message
@@ -76,7 +84,7 @@ class LLMBase(ABC):
 
             if message.tool_calls:
                 if message.content:
-                    logger.info(f"LLM Thought: {message.content}")
+                    logger.info(f"Agent Thought: {message.content.strip()}")
 
                 tool_messages: list[dict[str, str]] = []
                 for tool_call in message.tool_calls:
@@ -102,9 +110,17 @@ class LLMBase(ABC):
                         )
                         continue
 
-                    args: dict[str, Any] = json.loads(tool_call.function.arguments)
                     try:
+                        args: dict[str, Any] = json.loads(tool_call.function.arguments)
+                        jsonschema.validate(
+                            instance=args,
+                            schema=self.functions[tool_name]["parameters"],
+                        )
                         result: dict[str, Any] = await self.handlers[tool_name](**args)
+                    except json.JSONDecodeError as e:
+                        result = {"error": f"Invalid JSON in tool call arguments: {e}"}
+                    except jsonschema.ValidationError as e:
+                        result = {"error": f"Invalid tool call arguments: {e.message}"}
                     except Exception as e:
                         result = {"error": f"Exception occured during tool call: {e}"}
 
@@ -122,4 +138,4 @@ class LLMBase(ABC):
             if message.content:
                 return message.content
 
-            raise RuntimeError(f"Unexpected response: {response}")
+            messages.append({"role": "user", "content": "continue"})

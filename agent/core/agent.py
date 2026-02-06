@@ -10,7 +10,6 @@ import datetime
 import logging
 import platform
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any, Final
 
 from agent.core.event_logger import EventLogger
@@ -223,27 +222,19 @@ class Agent:
             },
         )
 
-    def _load_context_file(self, filepath: str, default_content: str = "") -> str:
-        """Load content from a context file on the host filesystem."""
-        path = Path(filepath)
-        try:
-            with path.open() as f:
-                content = f.read().strip()
-                return content if content else default_content
-        except FileNotFoundError:
-            try:
-                path.parent.mkdir(parents=True, exist_ok=True)
-                with path.open("w") as f:
-                    _ = f.write(default_content)
-                logger.info(f"Created context file: {filepath}")
-                return default_content
-
-            except Exception as e:
-                logger.warning(f"Could not create context file {filepath}: {e}")
-                return default_content
-        except Exception as e:
-            logger.warning(f"Error reading context file {filepath}: {e}")
-            return default_content
+        register(
+            toolbox.message_to_human,
+            {
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": "The message to send to human.",
+                    }
+                },
+                "required": ["message"],
+            },
+        )
 
     def initialize_system_prompt(self, last_response: str) -> None:
         """Initialize the system prompt with context and instructions."""
@@ -275,7 +266,7 @@ You wake up periodically to perform tasks.
 {last_response_text}
 
 ## Your Workspace Files
-You cwd is /workspace folder. Please organize your files in this folder.
+You cwd is /workspace folder. Please keep your files well organized in this folder.
 The workspace is persisted between runs. Maintain these files as your long-term memory between wakeups.
 
 ### /workspace/CONTEXT.md
@@ -283,6 +274,9 @@ Instructions: Update this file frequently. Refactor and summarize instead of jus
 
 ### /workspace/TODO.md
 Instructions: Keep this list active and manageable. Mark completed tasks, remove outdated ones, and prioritize new findings.
+
+### /workspace/tmp/
+Instructions: Keep your temporary files here. Delete them when you're done. Clean the folder regularly.
 
 ## Daily Journal
 Keep a daily journal at `/workspace/journal/{current_date}.md`. Document what you did, learned, and your next steps.
@@ -309,7 +303,7 @@ Use your tools extensively. Be proactive and productive.
         response = ""
         try:
             response = await self.llm_client.chat(self.messages, max_iterations)
-            await self.event_logger.log_llm_response(response)
+            await self.event_logger.log_agent_response(response)
         except Exception as e:
             logger.error(f"Error in agent run: {e}")
             response = f"Error: {e}"

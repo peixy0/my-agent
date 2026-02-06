@@ -14,14 +14,16 @@ from agent.llm.factory import LLMFactory
 from agent.tools.command_executor import ensure_container_running
 
 logger = logging.getLogger(__name__)
-agent_queue: Final[asyncio.Queue] = asyncio.Queue()
+agent_queue: Final[asyncio.Queue] = asyncio.Queue(10)
 
 
 @aiocron.crontab("0 8 * * *")
 async def fetch_news():
     """Example of a scheduled task that could fetch news headlines."""
     await agent_queue.put(
-        HumanInputEvent(content="Fetch latest tech news headlines and send them to me.")
+        HumanInputEvent(
+            content="Use agent-browser and your capabilities to find news like hackernews headlines, github trending projects, etc. and send them to me (in Chinese)."
+        )
     )
 
 
@@ -82,7 +84,8 @@ class Scheduler:
 
         prompt = (
             "You are awake. "
-            "Process the following human input and update your TODO and CONTEXT as needed:\n\n"
+            "Review your CONTEXT, then work on your tasks. "
+            "Process the following human input and update your TODO and CONTEXT as needed:\n"
             f"{content}"
         )
 
@@ -103,11 +106,6 @@ class Scheduler:
         logger.info(f"Wake interval: {settings.wake_interval_seconds} seconds")
 
         await self.queue.put(HeartbeatEvent())
-        await self.queue.put(
-            HumanInputEvent(
-                content="Fetch latest tech news headlines and send them to me."
-            )
-        )
 
         while self.running:
             event = await self.queue.get()

@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class EventLogger:
     """
     Logs agent events to a JSONL file and optionally streams to remote API.
-    Only logs tool_use and llm_response events.
+    Only logs tool_use and agent_response events.
     """
 
     log_file: Final[Path]
@@ -60,11 +60,11 @@ class EventLogger:
         }
         await self._write_event(event)
 
-    async def log_llm_response(self, content: str) -> None:
+    async def log_agent_response(self, content: str) -> None:
         """Log an LLM response event."""
         event = {
             "timestamp": datetime.now().astimezone().isoformat(),
-            "type": "llm_response",
+            "type": "agent_response",
             "data": {
                 "content": content,
             },

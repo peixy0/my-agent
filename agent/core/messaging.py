@@ -74,40 +74,82 @@ class Messaging:
             else:
                 logger.error(f"Failed to refresh token: {token_data.get('errmsg')}")
 
-    async def _message_to_human(self, message: str):
-        """
-        Send a message to human.
-        Only use this when you are explicitly asked to respond to human.
-        """
+    async def _send_raw_text(
+        self, session: aiohttp.ClientSession, content: str, continued: bool = False
+    ) -> None:
+        """Helper to send a single text message to WeChat."""
         if not self.access_token:
             return
 
+        content = content.strip()
+        if not content:
+            return
+
+        if continued:
+            content = "(...continued)\n\n" + content
+
+        url = "https://qyapi.weixin.qq.com/cgi-bin/message/send"
+        params = {"access_token": self.access_token}
+        payload = {
+            "touser": settings.wechat_touser,
+            "msgtype": "text",
+            "agentid": int(settings.wechat_agentid),
+            "text": {"content": content},
+            "safe": 0,
+        }
+        try:
+            async with session.post(
+                url,
+                params=params,
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=60.0),
+            ) as response:
+                data = await response.json()
+                if data.get("errcode") != 0:
+                    logger.error(f"WeChat send error: {data.get('errmsg')}")
+        except Exception as e:
+            logger.error(f"WeChat request failed: {e}")
+
+    async def _message_to_human(self, message: str):
+        """
+        Send a message to human user, splitting by lines and size limits.
+        Refactored to reduce complexity and handle large messages in chunks.
+        """
+        if not self.access_token or not message:
+            return
+
+        lines = message.splitlines()
+        batch = []
+        batch_size = 0
+        MAX_BYTES = 500
+        continued = False
+
         try:
             async with aiohttp.ClientSession() as session:
-                send_url = f"https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token={self.access_token}"
-                message_data = {
-                    "touser": settings.wechat_touser,
-                    "msgtype": "text",
-                    "agentid": int(settings.wechat_agentid),
-                    "text": {"content": message},
-                    "safe": 0,
-                }
-                async with session.post(
-                    send_url,
-                    json=message_data,
-                    timeout=aiohttp.ClientTimeout(total=60.0),
-                ) as response:
-                    send_data = await response.json()
-                    if send_data.get("errcode") != 0:
-                        logger.error(
-                            f"Failed to send message: {send_data.get('errmsg')}"
-                        )
-                        return {"status": "error", "message": "Failed to send message"}
-                    logger.info("Message sent successfully")
-                    return {"status": "success", "message": "Message sent."}
+                for line in lines:
+                    line_len = len(line.encode("utf-8"))
+
+                    # If adding this line exceeds 500 bytes and we already have some lines,
+                    # send the current batch first.
+                    if batch and (batch_size + line_len + len(batch)) > MAX_BYTES:
+                        await self._send_raw_text(session, "\n".join(batch), continued)
+                        batch, batch_size = [], 0
+                        continued = True
+
+                    batch.append(line)
+                    batch_size += line_len
+
+                    # If the current batch (even if it's just this one line) exceeds 500 bytes,
+                    # send it immediately. This ensures "at least one line" is sent.
+                    if (batch_size + len(batch) - 1) > MAX_BYTES:
+                        await self._send_raw_text(session, "\n".join(batch), continued)
+                        batch, batch_size = [], 0
+                        continued = True
+
+                if batch:
+                    await self._send_raw_text(session, "\n".join(batch), continued)
         except Exception as e:
-            logger.error(f"Failed to send message: {e}")
-            return {"status": "error", "message": "Failed to send message"}
+            logger.error(f"Failed to process message to human: {e}")
 
 
 messaging = NullMessaging() if settings.mute_agent else Messaging()
