@@ -249,16 +249,6 @@ class Agent:
         current_date = now.strftime("%Y-%m-%d")
         operating_system = platform.system()
 
-        # Load context files from host
-        context = self._load_context_file(
-            self.settings.context_file,
-            "This is your persistent context. Record important information here.",
-        )
-        todo = self._load_context_file(
-            self.settings.todo_file,
-            "# TODO\n\n- Explore your environment\n- Keep a daily journal",
-        )
-
         # Load skills
         skill_loader = SkillLoader(self.settings.skills_dir)
         skill_summaries = skill_loader.discover_skills()
@@ -277,11 +267,9 @@ You cwd is /workspace folder. Please organize your files in this folder.
 The workspace is persisted between runs. Maintain these files as your long-term memory between wakeups.
 
 ### /workspace/CONTEXT.md
-{context}
 Instructions: Update this file frequently. Refactor and summarize instead of just appending. Keep it relevant to your long-term goals.
 
 ### /workspace/TODO.md
-{todo}
 Instructions: Keep this list active and manageable. Mark completed tasks, remove outdated ones, and prioritize new findings.
 
 ## Daily Journal

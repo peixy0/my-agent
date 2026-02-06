@@ -63,7 +63,27 @@ CONTAINER_RUNTIME=podman
 
 # Optional: Adjust wake interval (seconds)
 WAKE_INTERVAL_SECONDS=900
+
+# Optional: WeChat Work integration for notifications
+WECHAT_CORPID=your_corp_id
+WECHAT_CORPSECRET=your_corp_secret
+WECHAT_AGENTID=your_agent_id
+WECHAT_TOUSER=@all
 ```
+
+### WeChat Work Integration
+
+The agent can send notifications via WeChat Work (企业微信). To enable:
+
+1. Get credentials from WeChat Work admin panel:
+   - `WECHAT_CORPID`: Your enterprise ID
+   - `WECHAT_CORPSECRET`: Application secret
+   - `WECHAT_AGENTID`: Application agent ID
+   - `WECHAT_TOUSER`: Target users (default: `@all`)
+
+2. Add credentials to your `.env` file
+
+3. Use the `发送应用消息` tool to send messages
 
 ## Workspace
 
@@ -89,6 +109,7 @@ workspace/
 | `edit_file` | Edit file content |
 | `web_search` | Search the web |
 | `fetch` | Fetch web pages |
+| `发送应用消息` | Send WeChat Work message |
 | `use_skill` | Load skill instructions |
 
 ## Skills

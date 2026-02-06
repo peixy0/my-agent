@@ -10,6 +10,7 @@ from typing import Any, cast
 import trafilatura
 from ddgs import DDGS
 
+from agent.core.messaging import messaging
 from agent.core.settings import settings
 from agent.tools.command_executor import CommandExecutor, ContainerCommandExecutor
 from agent.tools.skill_loader import SkillLoader
@@ -70,6 +71,18 @@ async def fetch(url: str) -> dict[str, Any]:
         downloaded = trafilatura.fetch_url(url)
         output = trafilatura.extract(downloaded)
         return {"status": "success", "output": output}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+async def message_to_human(message: str) -> dict[str, Any]:
+    """
+    Send a message to human.
+    Use this tool ONLY when you are explicitly asked to respond to human.
+    """
+    try:
+        await messaging.send_message(message)
+        return {"status": "success", "message": "Message sent."}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 

@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     container_name: str = "sys-agent-workspace"
     container_runtime: str = "podman"
 
+    # Agent settings
+    tool_timeout: int = 60
+    mute_agent: bool = False
+
     # Workspace paths (relative to host, mapped to /workspace in container)
     workspace_dir: str = "./workspace"
     context_file: str = "./workspace/CONTEXT.md"
@@ -35,7 +39,12 @@ class Settings(BaseSettings):
     stream_api_url: str = ""
     stream_api_key: str = ""
 
-    tool_timeout: int = 60
+    # WeChat Work settings
+    wechat_token_refresh_interval: int = 3600 * 4  # 4 hours
+    wechat_corpid: str = ""
+    wechat_corpsecret: str = ""
+    wechat_agentid: str = ""
+    wechat_touser: str = "@all"  # Default to all users, can be specific user ids
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
