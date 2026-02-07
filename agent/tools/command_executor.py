@@ -109,6 +109,10 @@ class ContainerCommandExecutor(CommandExecutor):
         """Execute a shell command in the container."""
         try:
             stdout, stderr, returncode = await self._exec_in_container(command)
+            if len(stdout) > 5000:
+                stdout = stdout[:5000] + "\n\n(truncated: output is too long)"
+            if len(stderr) > 5000:
+                stderr = stderr[:5000] + "\n\n(truncated: error is too long)"
 
             if returncode != 0:
                 return {
@@ -271,7 +275,7 @@ class ContainerCommandExecutor(CommandExecutor):
                 # 3. If it fails, provide a helpful diff of why it failed
                 return {
                     "status": "error",
-                    "message": f"Could not find exact match for search block in {filepath}. "
+                    "message": f"Could not find exact match in {filepath} for search block\n\n{search_block}\n\n"
                     "Ensure your SEARCH block is a literal copy of the file content.",
                 }
 

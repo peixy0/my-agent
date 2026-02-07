@@ -1,12 +1,11 @@
 import logging
 from typing import Any
 
-from openai import AsyncOpenAI, InternalServerError, RateLimitError
+from openai import AsyncOpenAI, BadRequestError
 from tenacity import (
     before_sleep_log,
     retry,
-    retry_if_exception_type,
-    stop_after_attempt,
+    retry_if_not_exception_type,
     wait_exponential,
 )
 from typing_extensions import override
@@ -42,9 +41,8 @@ class LLMClient(LLMBase):
         super().__init__(model, event_logger)
 
     @retry(
-        retry=retry_if_exception_type((InternalServerError, RateLimitError)),
-        wait=wait_exponential(multiplier=2, min=5, max=60),
-        stop=stop_after_attempt(5),
+        retry=retry_if_not_exception_type(BadRequestError),
+        wait=wait_exponential(multiplier=2, min=5, max=300),
         before_sleep=before_sleep_log(logger, logging.WARNING),
     )
     @override

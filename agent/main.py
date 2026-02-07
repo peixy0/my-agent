@@ -1,15 +1,15 @@
 import asyncio
+import json
 import logging
 from datetime import datetime
 from typing import Final
 
-from agent.core.event_logger import EventLogger
-from agent.core.events import HeartbeatEvent, HumanInputEvent
+from agent.core.event_logger import event_logger
+from agent.core.events import HeartbeatEvent
 from agent.core.settings import settings
 from agent.llm.agent import Agent
 from agent.llm.factory import LLMFactory
 from agent.tools.command_executor import ensure_container_running
-from agent.tools.messaging import messaging
 
 logger = logging.getLogger(__name__)
 
@@ -33,14 +33,12 @@ class Scheduler:
     running: bool
     queue: asyncio.Queue
     heartbeat_task: asyncio.Task[None] | None
-    last_response: str
 
     def __init__(self, agent: Agent, queue: asyncio.Queue):
         self.agent = agent
         self.running = True
         self.queue = queue
         self.heartbeat_task = None
-        self.last_response = ""
 
     async def _ensure_container(self) -> bool:
         """Ensure the workspace container is running."""
@@ -58,31 +56,29 @@ class Scheduler:
 
     async def _process_heartbeat(self) -> None:
         """Process heartbeat event."""
-        self.agent.initialize_system_prompt(self.last_response)
+        self.agent.initialize_system_prompt()
 
-        prompt = (
-            "You are awake. "
-            "Review your CONTEXT and TODO, then work on your tasks. "
-            "Remember to update your journal and context files."
-        )
-
-        logger.info(f"Executing agent with prompt: {prompt}")
-        self.last_response = await self.agent.run(prompt)
-        logger.info("Wake cycle completed")
-
-    async def _process_human_input(self, content: str) -> None:
-        """Process human input event."""
-        self.agent.initialize_system_prompt(self.last_response)
-
-        prompt = (
-            "You are awake. "
-            "Review your CONTEXT, then work on your tasks. "
-            "Process the message from human and update your TODO and CONTEXT as needed:\n"
-            f"{content}"
-        )
+        response_schema = {
+            "type": "object",
+            "properties": {
+                "report_decision": {
+                    "type": "boolean",
+                    "description": "Whether to send a report to the human user based on the reporting criteria.",
+                },
+                "report_message": {
+                    "type": "string",
+                    "description": "The message to report to the user (if report_decision is true) or a summary of activity (if false).",
+                },
+            },
+            "required": ["report_decision", "report_message"],
+        }
+        prompt = f"You are awake. Please respond with a JSON object matching this schema: {json.dumps(response_schema)}"
 
         logger.info(f"Executing agent with prompt: {prompt}")
-        self.last_response = await self.agent.run(prompt, max_iterations=200)
+        response = await self.agent.run(prompt, response_schema=response_schema)
+        await event_logger.log_agent_response(
+            f"REPORT DECISION: {response['report_decision']}\n\n{response['report_message']}"
+        )
         logger.info("Wake cycle completed")
 
     async def run(self) -> None:
@@ -112,13 +108,8 @@ class Scheduler:
                     logger.info(f"Wake cycle at {wake_time}")
                     await self._process_heartbeat()
 
-                if isinstance(event, HumanInputEvent):
-                    logger.info(f"Received human input: {event.content}")
-                    await self._process_human_input(event.content)
-
             except Exception as e:
                 logger.error(f"Error during event processing: {e}", exc_info=True)
-                self.last_response = ""
 
             if self.heartbeat_task:
                 _ = self.heartbeat_task.cancel()
@@ -132,13 +123,7 @@ async def main() -> None:
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
-    _ = asyncio.create_task(messaging.run())
-
-    event_logger = EventLogger(
-        log_file=settings.event_log_file,
-        stream_url=settings.stream_api_url,
-        stream_api_key=settings.stream_api_key,
-    )
+    _ = asyncio.create_task(event_logger.run())
 
     llm_client = LLMFactory.create(
         url=settings.openai_base_url,

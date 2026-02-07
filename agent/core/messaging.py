@@ -30,7 +30,7 @@ class NullMessaging:
         pass
 
 
-class Messaging:
+class WXMessaging:
     def __init__(self):
         self.event_queue: asyncio.Queue[MessagingEvent] = asyncio.Queue()
         self.access_token: str | None = None
@@ -156,6 +156,3 @@ class Messaging:
                     )
         except Exception as e:
             logger.error(f"Failed to process message to human: {e}")
-
-
-messaging = NullMessaging() if settings.mute_agent else Messaging()

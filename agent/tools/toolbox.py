@@ -11,29 +11,13 @@ import trafilatura
 from ddgs import DDGS
 
 from agent.core.settings import settings
-from agent.tools.command_executor import CommandExecutor, ContainerCommandExecutor
-from agent.tools.messaging import messaging
+from agent.tools.command_executor import ContainerCommandExecutor
 from agent.tools.skill_loader import SkillLoader
 
-# Module-level executor instance (initialized lazily)
-_executor: CommandExecutor | None = None
-
-
-def get_executor() -> CommandExecutor:
-    """Get or create the command executor instance."""
-    global _executor
-    if _executor is None:
-        _executor = ContainerCommandExecutor(
-            container_name=settings.container_name,
-            runtime=settings.container_runtime,
-        )
-    return _executor
-
-
-def set_executor(executor: CommandExecutor) -> None:
-    """Set a custom executor (useful for testing)."""
-    global _executor
-    _executor = executor
+executor = ContainerCommandExecutor(
+    container_name=settings.container_name,
+    runtime=settings.container_runtime,
+)
 
 
 async def run_command(command: str) -> dict[str, Any]:
@@ -43,7 +27,6 @@ async def run_command(command: str) -> dict[str, Any]:
     Use this tool to explore the filesystem, run scripts, or execute
     any shell command. The command runs in /workspace inside the container.
     """
-    executor = get_executor()
     return await executor.execute(command)
 
 
@@ -82,19 +65,19 @@ async def write_file(filename: str, content: str) -> dict[str, Any]:
     The filename should be relative to /workspace or an absolute path.
     Parent directories will be created if they don't exist.
     """
-    executor = get_executor()
     return await executor.write_file(filename, content)
 
 
-async def read_file(filename: str, start_line: int = 1) -> dict[str, Any]:
+async def read_file(
+    filename: str, start_line: int = 1, limit: int = 200
+) -> dict[str, Any]:
     """
     Read content from a file in the workspace container.
 
     The filename should be relative to /workspace or an absolute path.
     Returns max 200 lines. Use start_line to read further.
     """
-    executor = get_executor()
-    return await executor.read_file(filename, start_line=start_line)
+    return await executor.read_file(filename, start_line=start_line, limit=limit)
 
 
 async def edit_file(filepath: str, edits: list[dict[str, str]]) -> dict[str, Any]:
@@ -106,7 +89,6 @@ async def edit_file(filepath: str, edits: list[dict[str, str]]) -> dict[str, Any
     2. Provide just enough context in SEARCH to be unique.
     3. If multiple changes are needed, provide multiple edit blocks.
     """
-    executor = get_executor()
     return await executor.edit_file(filepath, edits)
 
 
@@ -130,13 +112,3 @@ async def use_skill(skill_name: str) -> dict[str, Any]:
             "instructions": skill.instructions,
         },
     }
-
-
-async def message_to_human(message: str) -> dict[str, Any]:
-    """
-    Send a message to human.
-    You MUST NEVER use this tool to send work report, summary, or any automated message.
-    Use this tool ONLY when you are explicitly asked to respond to human.
-    """
-    await messaging.send_message(message)
-    return {"status": "success", "message": "Message sent."}

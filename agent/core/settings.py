@@ -31,10 +31,10 @@ class Settings(BaseSettings):
     skills_dir: str = "./workspace/.skills"
 
     # Autonomous mode settings
-    wake_interval_seconds: int = 600  # 10 minutes
+    wake_interval_seconds: int = 1800  # 30 minutes
 
     # Event streaming settings
-    stream_api_url: str = ""
+    event_api_url: str = ""
     stream_api_key: str = ""
 
     # WeChat Work settings

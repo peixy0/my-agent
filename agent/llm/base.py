@@ -170,5 +170,4 @@ class LLMBase(ABC):
                 messages.append({"role": "user", "content": "continue"})
                 continue
 
-            await self.event_logger.log_agent_response(message.content)
             return message.content
