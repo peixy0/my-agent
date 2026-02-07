@@ -3,28 +3,22 @@ import logging
 from datetime import datetime
 from typing import Final
 
-import aiocron
-
-from agent.core.agent import Agent
 from agent.core.event_logger import EventLogger
 from agent.core.events import HeartbeatEvent, HumanInputEvent
-from agent.core.messaging import messaging
 from agent.core.settings import settings
+from agent.llm.agent import Agent
 from agent.llm.factory import LLMFactory
 from agent.tools.command_executor import ensure_container_running
+from agent.tools.messaging import messaging
 
 logger = logging.getLogger(__name__)
-agent_queue: Final[asyncio.Queue] = asyncio.Queue(10)
+
+agent_queue: asyncio.Queue = asyncio.Queue()
 
 
-@aiocron.crontab("0 8 * * *")
-async def fetch_news():
-    """Example of a scheduled task that could fetch news headlines."""
-    await agent_queue.put(
-        HumanInputEvent(
-            content="Use agent-browser and your capabilities to find news like hackernews headlines, github trending projects, etc. and send them to me (in Chinese)."
-        )
-    )
+async def schedule_heartbeat():
+    """Scheduled heartbeat."""
+    await agent_queue.put(HeartbeatEvent())
 
 
 class Scheduler:
@@ -36,15 +30,13 @@ class Scheduler:
     """
 
     agent: Final[Agent]
-    event_logger: Final[EventLogger]
     running: bool
     queue: asyncio.Queue
     heartbeat_task: asyncio.Task[None] | None
     last_response: str
 
-    def __init__(self, agent: Agent, queue: asyncio.Queue, event_logger: EventLogger):
+    def __init__(self, agent: Agent, queue: asyncio.Queue):
         self.agent = agent
-        self.event_logger = event_logger
         self.running = True
         self.queue = queue
         self.heartbeat_task = None
@@ -85,7 +77,7 @@ class Scheduler:
         prompt = (
             "You are awake. "
             "Review your CONTEXT, then work on your tasks. "
-            "Process the following human input and update your TODO and CONTEXT as needed:\n"
+            "Process the message from human and update your TODO and CONTEXT as needed:\n"
             f"{content}"
         )
 
@@ -105,7 +97,7 @@ class Scheduler:
         logger.info("Scheduler starting...")
         logger.info(f"Wake interval: {settings.wake_interval_seconds} seconds")
 
-        await self.queue.put(HeartbeatEvent())
+        await schedule_heartbeat()
 
         while self.running:
             event = await self.queue.get()
@@ -152,10 +144,11 @@ async def main() -> None:
         url=settings.openai_base_url,
         model=settings.openai_model,
         api_key=settings.openai_api_key,
+        event_logger=event_logger,
     )
 
-    agent = Agent(llm_client, event_logger, settings)
-    runner = Scheduler(agent, agent_queue, event_logger)
+    agent = Agent(llm_client, settings)
+    runner = Scheduler(agent, agent_queue)
     await runner.run()
 
 

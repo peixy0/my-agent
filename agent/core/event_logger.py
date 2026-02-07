@@ -109,7 +109,7 @@ class EventLogger:
 
                 # Append event as JSON line
                 with self.log_file.open("a") as f:
-                    _ = f.write(json.dumps(event) + "\n")
+                    _ = f.write(json.dumps(event, ensure_ascii=False) + "\n")
 
             except Exception as e:
                 logger.error(f"Failed to write event to file: {e}")

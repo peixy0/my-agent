@@ -12,7 +12,6 @@ import platform
 from collections.abc import Callable
 from typing import Any, Final
 
-from agent.core.event_logger import EventLogger
 from agent.core.settings import Settings
 from agent.llm.base import LLMBase
 from agent.tools import toolbox
@@ -31,7 +30,6 @@ class Agent:
 
     llm_client: Final[LLMBase]
 
-    event_logger: Final[EventLogger]
     settings: Final[Settings]
     messages: list[dict[str, str]]
     system_prompt: str
@@ -39,12 +37,9 @@ class Agent:
     def __init__(
         self,
         llm_client: LLMBase,
-        event_logger: EventLogger,
         agent_settings: Settings,
     ):
         self.llm_client = llm_client
-
-        self.event_logger = event_logger
         self.settings = agent_settings
         self.messages = []
         self._register_default_tools()
@@ -58,36 +53,19 @@ class Agent:
 
             async def wrapped_tool(**kwargs: Any) -> Any:
                 tool_name = func.__name__
-                logger.info(f"Executing tool: {tool_name} with args: {kwargs}")
-
                 try:
                     result = await asyncio.wait_for(
                         func(**kwargs), timeout=self.settings.tool_timeout
                     )
-                    logger.info(f"Tool {tool_name} completed successfully")
-                    await self.event_logger.log_tool_use(tool_name, kwargs, result)
-
                     return result
                 except asyncio.TimeoutError:
-                    logger.error(
-                        f"Tool {tool_name} timed out after {self.settings.tool_timeout}s"
-                    )
                     error_result = {
                         "status": "error",
                         "message": f"Tool {tool_name} timed out after {self.settings.tool_timeout}s",
                     }
-                    await self.event_logger.log_tool_use(
-                        tool_name, kwargs, error_result
-                    )
-
                     return error_result
                 except Exception as e:
-                    logger.error(f"Tool {tool_name} failed: {e}")
                     error_result = {"status": "error", "message": str(e)}
-                    await self.event_logger.log_tool_use(
-                        tool_name, kwargs, error_result
-                    )
-
                     return error_result
 
             wrapped_tool.__name__ = func.__name__
@@ -267,7 +245,8 @@ You wake up periodically to perform tasks.
 
 ## Your Workspace Files
 You cwd is /workspace folder. Please keep your files well organized in this folder.
-The workspace is persisted between runs. Maintain these files as your long-term memory between wakeups.
+The workspace is persisted between wakeups, but not your memory.
+So it's very important to maintain these files as your long-term memory.
 
 ### /workspace/CONTEXT.md
 Instructions: Update this file frequently. Refactor and summarize instead of just appending. Keep it relevant to your long-term goals.
@@ -297,13 +276,12 @@ Use your tools extensively. Be proactive and productive.
 
         self.messages = [{"role": "system", "content": self.system_prompt}]
 
-    async def run(self, user_prompt: str, max_iterations: int = 50) -> str:
+    async def run(self, user_prompt: str, max_iterations: int = 200) -> str:
         """Run a single turn of the agent conversation."""
         self.messages.append({"role": "user", "content": user_prompt})
         response = ""
         try:
             response = await self.llm_client.chat(self.messages, max_iterations)
-            await self.event_logger.log_agent_response(response)
         except Exception as e:
             logger.error(f"Error in agent run: {e}")
             response = f"Error: {e}"

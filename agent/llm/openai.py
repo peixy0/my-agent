@@ -11,6 +11,7 @@ from tenacity import (
 )
 from typing_extensions import override
 
+from agent.core.event_logger import EventLogger
 from agent.llm.base import LLMBase
 
 logger = logging.getLogger(__name__)
@@ -24,7 +25,7 @@ class LLMClient(LLMBase):
     handling tool calls, and managing rate limits.
     """
 
-    def __init__(self, url: str, model: str, api_key: str = "sk-dummy"):
+    def __init__(self, url: str, model: str, api_key: str, event_logger: EventLogger):
         """
         Initializes the LLMClient.
 
@@ -32,12 +33,13 @@ class LLMClient(LLMBase):
             url: The base URL of the LLM API.
             model: The name of the LLM model to use.
             api_key: The API key for the LLM API.
+            event_logger: The event logger to use for logging events.
         """
         self.client: AsyncOpenAI = AsyncOpenAI(
             base_url=url,
             api_key=api_key,
         )
-        super().__init__(model)
+        super().__init__(model, event_logger)
 
     @retry(
         retry=retry_if_exception_type((InternalServerError, RateLimitError)),

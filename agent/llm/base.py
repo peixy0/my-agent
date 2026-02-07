@@ -6,14 +6,17 @@ from typing import Any
 
 import jsonschema
 
+from agent.core.event_logger import EventLogger
+
 logger = logging.getLogger(__name__)
 
 
 class LLMBase(ABC):
-    def __init__(self, model: str):
+    def __init__(self, model: str, event_logger: EventLogger):
         self.model: str = model
         self.functions: dict[str, dict[str, Any]] = {}
         self.handlers: dict[str, Callable[..., Awaitable[dict[str, Any]]]] = {}
+        self.event_logger = event_logger
 
     def register_function(self, parameters: dict[str, Any]):
         """
@@ -43,9 +46,7 @@ class LLMBase(ABC):
     async def _do_completion(self, *args: Any, **kwargs: Any) -> Any:
         raise NotImplementedError
 
-    async def chat(
-        self, messages: list[dict[str, str]], max_iterations: int = 50
-    ) -> str:
+    async def chat(self, messages: list[dict[str, str]], max_iterations: int) -> str:
         """
         Sends a chat message to the LLM and handles the response.
 
@@ -70,21 +71,24 @@ class LLMBase(ABC):
                     {"type": "function", "function": fn}
                     for fn in self.functions.values()
                 ],
+                temperature=1.0,
+                top_p=1.0,
                 tool_choice="auto",
                 extra_body={
                     "chat_template_kwargs": {
-                        "enable_thinking": True,
-                        "clear_thinking": False,
+                        "thinking": True,
                     }
                 },
             )
 
             message = response.choices[0].message
+            finish_reason = response.choices[0].finish_reason
             messages.append(message.model_dump())
 
             if message.tool_calls:
-                if message.content:
-                    logger.info(f"Agent Thought: {message.content.strip()}")
+                reasoning = message.content or getattr(message, "reasoning", "")
+                if reasoning:
+                    logger.info(f"Agent Thought: {reasoning.strip()}")
 
                 tool_messages: list[dict[str, str]] = []
                 for tool_call in message.tool_calls:
@@ -110,19 +114,46 @@ class LLMBase(ABC):
                         )
                         continue
 
+                    logger.info(
+                        f"Executing tool {tool_name} with args: {tool_call.function.arguments}"
+                    )
+                    args: dict[str, Any] = {}
                     try:
-                        args: dict[str, Any] = json.loads(tool_call.function.arguments)
+                        args = json.loads(tool_call.function.arguments)
+                        if self.model.startswith("deepseek-ai/"):
+                            for arg_name, arg_value in args.items():
+                                try:
+                                    arg_value_parsed = json.loads(arg_value)
+                                    args[arg_name] = arg_value_parsed
+                                except json.JSONDecodeError:
+                                    pass
                         jsonschema.validate(
                             instance=args,
                             schema=self.functions[tool_name]["parameters"],
                         )
                         result: dict[str, Any] = await self.handlers[tool_name](**args)
                     except json.JSONDecodeError as e:
-                        result = {"error": f"Invalid JSON in tool call arguments: {e}"}
+                        result = {
+                            "status": "error",
+                            "message": f"Invalid JSON in tool call arguments: {e}",
+                        }
                     except jsonschema.ValidationError as e:
-                        result = {"error": f"Invalid tool call arguments: {e.message}"}
+                        result = {
+                            "status": "error",
+                            "message": f"Invalid tool call arguments: {e.message}",
+                        }
                     except Exception as e:
-                        result = {"error": f"Exception occured during tool call: {e}"}
+                        result = {
+                            "status": "error",
+                            "message": f"Exception occured during tool call: {e}",
+                        }
+
+                    if result.get("status") == "error":
+                        logger.error(f"Tool call {tool_name} failed: {result}")
+                    else:
+                        logger.info(f"Tool call {tool_name} completed successfully")
+
+                    await self.event_logger.log_tool_use(tool_name, args, result)
 
                     tool_messages.append(
                         {
@@ -135,7 +166,9 @@ class LLMBase(ABC):
                 messages.extend(tool_messages)
                 continue
 
-            if message.content:
-                return message.content
+            if finish_reason != "stop":
+                messages.append({"role": "user", "content": "continue"})
+                continue
 
-            messages.append({"role": "user", "content": "continue"})
+            await self.event_logger.log_agent_response(message.content)
+            return message.content

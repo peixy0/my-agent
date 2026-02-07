@@ -10,9 +10,9 @@ from typing import Any, cast
 import trafilatura
 from ddgs import DDGS
 
-from agent.core.messaging import messaging
 from agent.core.settings import settings
 from agent.tools.command_executor import CommandExecutor, ContainerCommandExecutor
+from agent.tools.messaging import messaging
 from agent.tools.skill_loader import SkillLoader
 
 # Module-level executor instance (initialized lazily)
@@ -54,8 +54,8 @@ async def web_search(query: str) -> dict[str, Any]:
     Returns a list of search results with titles, URLs, and snippets.
     """
     try:
-        with cast(Any, DDGS(timeout=60)) as ddgs:
-            results = [r for r in ddgs.text(query, max_results=7)]
+        with cast(Any, DDGS()) as ddgs:
+            results = [r for r in ddgs.text(query, max_results=7, timeout=60)]
             return {"status": "success", "results": results}
     except Exception as e:
         return {"status": "error", "message": str(e)}
