@@ -1,46 +1,23 @@
 import json
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Awaitable, Callable
 from typing import Any
 
 import jsonschema
 
 from agent.core.event_logger import EventLogger
+from agent.tools.tool_registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
 
 class LLMBase(ABC):
-    def __init__(self, model: str, event_logger: EventLogger):
+    def __init__(
+        self, model: str, event_logger: EventLogger, tool_registry: ToolRegistry
+    ):
         self.model: str = model
-        self.functions: dict[str, dict[str, Any]] = {}
-        self.handlers: dict[str, Callable[..., Awaitable[dict[str, Any]]]] = {}
         self.event_logger = event_logger
-
-    def register_function(self, parameters: dict[str, Any]):
-        """
-        A decorator for registering a tool function with the LLM client.
-
-        Args:
-            parameters: A JSON schema describing the parameters of the tool function.
-
-        Returns:
-            A decorator that registers the tool function.
-        """
-
-        def decorator(func: Callable[..., Awaitable[dict[str, Any]]]):
-            name = func.__name__
-            description = func.__doc__ or ""
-            self.functions[name] = {
-                "name": name,
-                "description": description.strip(),
-                "parameters": parameters,
-            }
-            self.handlers[name] = func
-            return func
-
-        return decorator
+        self._tool_registry = tool_registry
 
     @abstractmethod
     async def _do_completion(self, *args: Any, **kwargs: Any) -> Any:
@@ -54,23 +31,21 @@ class LLMBase(ABC):
 
         Args:
             messages: A list of messages in the chat history.
-            messages: A list of messages in the chat history.
-
             max_iterations: The maximum number of tool call iterations to perform.
 
         Returns:
             The final content of the LLM's response.
         """
+        schemas = self._tool_registry.schemas
+        handlers = self._tool_registry.handlers
+
         current_iteration = 0
         while True:
             current_iteration += 1
             response = await self._do_completion(
                 model=self.model,
                 messages=messages,
-                tools=[
-                    {"type": "function", "function": fn}
-                    for fn in self.functions.values()
-                ],
+                tools=[{"type": "function", "function": fn} for fn in schemas.values()],
                 temperature=1.0,
                 top_p=1.0,
                 tool_choice="auto",
@@ -104,7 +79,7 @@ class LLMBase(ABC):
                         )
                         continue
 
-                    if tool_name not in self.handlers:
+                    if tool_name not in handlers:
                         tool_messages.append(
                             {
                                 "role": "tool",
@@ -129,9 +104,9 @@ class LLMBase(ABC):
                                     pass
                         jsonschema.validate(
                             instance=args,
-                            schema=self.functions[tool_name]["parameters"],
+                            schema=schemas[tool_name]["parameters"],
                         )
-                        result: dict[str, Any] = await self.handlers[tool_name](**args)
+                        result: dict[str, Any] = await handlers[tool_name](**args)
                     except json.JSONDecodeError as e:
                         result = {
                             "status": "error",

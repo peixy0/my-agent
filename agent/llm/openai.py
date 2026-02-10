@@ -12,6 +12,7 @@ from typing_extensions import override
 
 from agent.core.event_logger import EventLogger
 from agent.llm.base import LLMBase
+from agent.tools.tool_registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -24,21 +25,19 @@ class LLMClient(LLMBase):
     handling tool calls, and managing rate limits.
     """
 
-    def __init__(self, url: str, model: str, api_key: str, event_logger: EventLogger):
-        """
-        Initializes the LLMClient.
-
-        Args:
-            url: The base URL of the LLM API.
-            model: The name of the LLM model to use.
-            api_key: The API key for the LLM API.
-            event_logger: The event logger to use for logging events.
-        """
+    def __init__(
+        self,
+        url: str,
+        model: str,
+        api_key: str,
+        event_logger: EventLogger,
+        tool_registry: ToolRegistry,
+    ):
         self.client: AsyncOpenAI = AsyncOpenAI(
             base_url=url,
             api_key=api_key,
         )
-        super().__init__(model, event_logger)
+        super().__init__(model, event_logger, tool_registry)
 
     @retry(
         retry=retry_if_not_exception_type(BadRequestError),

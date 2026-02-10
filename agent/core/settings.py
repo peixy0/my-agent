@@ -42,7 +42,11 @@ class Settings(BaseSettings):
     wechat_corpid: str = ""
     wechat_corpsecret: str = ""
     wechat_agentid: str = ""
-    wechat_touser: str = "@all"  # Default to all users, can be specific user ids
+    wechat_touser: str = "@all"
+
+    # API server settings
+    api_host: str = "0.0.0.0"
+    api_port: int = 8000
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
@@ -52,7 +56,3 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Factory function for settings, enables dependency injection in tests."""
     return Settings()
-
-
-# Default singleton for convenience
-settings = get_settings()

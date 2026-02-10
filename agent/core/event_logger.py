@@ -4,8 +4,6 @@ from typing import Any, Final
 
 import aiohttp
 
-from agent.core.settings import settings
-
 logger = logging.getLogger(__name__)
 
 
@@ -108,6 +106,3 @@ class EventLogger:
                         _ = await response.read()
             except Exception as e:
                 logger.error(f"Error posting event to API: {e}")
-
-
-event_logger = EventLogger(settings.event_api_url, settings.stream_api_key)

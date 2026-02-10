@@ -2,12 +2,12 @@
 
 import pytest
 
+from agent.core.settings import Settings
+
 
 @pytest.fixture
 def mock_settings():
     """Create mock settings for testing."""
-    from agent.core.settings import Settings
-
     return Settings(
         openai_base_url="https://api.example.com/v1",
         openai_model="test-model",
@@ -19,4 +19,6 @@ def mock_settings():
         event_log_file="/tmp/test-workspace/events.jsonl",
         skills_dir="/tmp/test-workspace/.skills",
         wake_interval_seconds=60,
+        api_host="127.0.0.1",
+        api_port=8999,
     )
