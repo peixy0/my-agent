@@ -87,7 +87,7 @@ class Scheduler:
             user_prompt, response_schema=HEARTBEAT_RESPONSE_SCHEMA
         )
         await self.app.event_logger.log_agent_response(
-            f"REPORT DECISION: {response['report_decision']}\n\n{response['report_message']}"
+            f"REPORT DECISION: {'YES' if response['report_decision'] else 'NO'}\n\n{response['report_message']}"
         )
         logger.info("Heartbeat cycle completed")
 
@@ -96,7 +96,7 @@ class Scheduler:
         self.app.agent.set_system_prompt(prompt)
 
         user_prompt = (
-            f"A human user has sent you the following message. Process it and respond.\n\n"
+            f"Human has sent you the following message. Process it and respond.\n\n"
             f"Human message: {event.content}\n\n"
             f"Respond with a JSON object matching this schema: {json.dumps(HUMAN_INPUT_RESPONSE_SCHEMA)}"
         )
@@ -106,10 +106,9 @@ class Scheduler:
             user_prompt, response_schema=HUMAN_INPUT_RESPONSE_SCHEMA
         )
         await self.app.event_logger.log_agent_response(
-            f"HUMAN INPUT RESPONSE:\n\n{response['report_message']}"
+            f"HUMAN INPUT RESPONSE:\n\n{response['message']}"
         )
-        if response.get("report_decision") and not self.app.settings.mute_agent:
-            await self.app.messaging.send_message(response["report_message"])
+        await self.app.messaging.send_message(response["message"])
         logger.info("Human input processing completed")
 
     async def run(self) -> None:

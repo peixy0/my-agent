@@ -20,11 +20,11 @@ class EventLogger:
     def __init__(
         self,
         event_url: str,
-        stream_api_key: str,
+        event_api_key: str,
     ):
         self.event_url = event_url
         self._headers = {
-            "x-api-key": stream_api_key,
+            "x-api-key": event_api_key,
             "Content-Type": "application/json",
         }
         self._queue = asyncio.Queue()

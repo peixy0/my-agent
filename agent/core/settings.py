@@ -22,7 +22,6 @@ class Settings(BaseSettings):
 
     # Agent settings
     tool_timeout: int = 60
-    mute_agent: bool = True
 
     # Workspace paths (relative to host, mapped to /workspace in container)
     workspace_dir: str = "./workspace"
@@ -35,7 +34,7 @@ class Settings(BaseSettings):
 
     # Event streaming settings
     event_api_url: str = ""
-    stream_api_key: str = ""
+    event_api_key: str = ""
 
     # WeChat Work settings
     wechat_token_refresh_interval: int = 3600 * 4  # 4 hours

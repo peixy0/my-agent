@@ -42,7 +42,7 @@ class Application:
         # Event logger
         self.event_logger = EventLogger(
             event_url=self.settings.event_api_url,
-            stream_api_key=self.settings.stream_api_key,
+            event_api_key=self.settings.event_api_key,
         )
 
         # Tool infrastructure

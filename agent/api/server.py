@@ -47,7 +47,7 @@ def create_api(event_queue: asyncio.Queue) -> FastAPI:
         description="HTTP interface for the autonomous LLM agent",
     )
 
-    @app.post("/api/input", response_model=HumanInputResponse)
+    @app.post("/api/bot", response_model=HumanInputResponse)
     async def submit_input(request: HumanInputRequest) -> HumanInputResponse:
         """Accept human input and queue it for the agent."""
         logger.info(f"Received human input: {request.message[:100]}...")
