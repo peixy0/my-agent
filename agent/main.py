@@ -23,16 +23,29 @@ AgentEvent = HeartbeatEvent | HumanInputEvent
 HEARTBEAT_RESPONSE_SCHEMA: dict = {
     "type": "object",
     "properties": {
+        "report_decision_reasoning": {
+            "type": "string",
+            "description": "The reasoning behind the report decision.",
+        },
         "report_decision": {
             "type": "boolean",
             "description": "Whether to send a report to the human user based on the reporting criteria.",
         },
-        "report_message": {
+        "message": {
             "type": "string",
-            "description": "The message to report to the user with `report-styler` enforced (if report_decision is true) or a summary of activity (if false).",
+            "description": "The message to report to the user with `message-styler` enforced (if report_decision is true) or empty (if false).",
+        },
+        "message_styler_enforced": {
+            "type": "boolean",
+            "description": "Whether the message is enforced with the `message-styler` skill.",
         },
     },
-    "required": ["report_decision", "report_message"],
+    "required": [
+        "report_decision_reasoning",
+        "report_decision",
+        "message",
+        "message_styler_enforced",
+    ],
 }
 
 HUMAN_INPUT_RESPONSE_SCHEMA: dict = {
@@ -42,9 +55,15 @@ HUMAN_INPUT_RESPONSE_SCHEMA: dict = {
             "type": "string",
             "description": "The response to the human's message.",
         },
+        "message_styler_enforced": {
+            "type": "boolean",
+            "description": "Whether the message is enfoced with the `message-styler` skill.",
+        },
     },
-    "required": ["message"],
+    "required": ["message", "message_styler_enforced"],
 }
+
+ENFORCE_STYLER_PROMPT = """Message must be styled with `message-styler` skill."""
 
 
 class Scheduler:
@@ -80,14 +99,23 @@ class Scheduler:
         self.app.agent.set_system_prompt(prompt)
 
         schema_str = json.dumps(HEARTBEAT_RESPONSE_SCHEMA)
-        user_prompt = f"You are awake. Please respond with a JSON object matching this schema: {schema_str}"
+        user_prompt = f"""# SYSTEM EVENT: AUTONOMOUS WAKE-UP
+**Trigger:** Scheduled Heartbeat
+**Status:** No new human input detected.
+
+Please respond with a JSON object matching this schema: {schema_str}"""
 
         logger.info("Executing agent heartbeat cycle")
         response = await self.app.agent.run(
             user_prompt, response_schema=HEARTBEAT_RESPONSE_SCHEMA
         )
+        while not response.get("message_styler_enforced"):
+            await self.app.messaging.send_message(response["message"])
+            response = await self.app.agent.run(
+                ENFORCE_STYLER_PROMPT, response_schema=HUMAN_INPUT_RESPONSE_SCHEMA
+            )
         await self.app.event_logger.log_agent_response(
-            f"REPORT DECISION: {'YES' if response['report_decision'] else 'NO'}\n\n{response['report_message']}"
+            f"REPORT DECISION: {'YES' if response['report_decision'] else 'NO'}\n\nREASONING:\n{response['report_decision_reasoning']}\n\nMESSAGE:\n{response['message']}"
         )
         logger.info("Heartbeat cycle completed")
 
@@ -95,20 +123,39 @@ class Scheduler:
         prompt = self.app.prompt_builder.build()
         self.app.agent.set_system_prompt(prompt)
 
-        user_prompt = (
-            f"Human has sent you the following message. Process it and respond.\n\n"
-            f"Human message: {event.content}\n\n"
-            f"Respond with a JSON object matching this schema: {json.dumps(HUMAN_INPUT_RESPONSE_SCHEMA)}"
-        )
+        schema_str = json.dumps(HUMAN_INPUT_RESPONSE_SCHEMA)
+        user_prompt = f"""
+        # SYSTEM EVENT: HUMAN INTERRUPTION
+**Trigger:** Incoming Message
+**Source:** Human
+
+## INSTRUCTIONS
+1.  **Immediate Priority:** Pausing current task to handle user request.
+2.  **Update Alignment:**
+    *   Analyze the user's message. Does it change a priority? Does it introduce a new interest?
+    *   **Action:** Update `/workspace/USER.md` *before* executing the task. This ensures your future self remembers this preference.
+    *   *Example:* If user says "Stop looking for cheap flights," remove the Flight entry from `TRACK.md` and `USER.md` immediately.
+3.  **Execution:**
+    *   If the request is simple, do it and report.
+    *   If the request is complex (e.g., "Research this entire topic"), break it down into atomic steps, add them to `/workspace/TODO.md`, and report: "I have queued this into [Number] tasks. Starting tasks now."
+
+## USER MESSAGE:
+"{event.content}"
+
+Respond with a JSON object matching this schema: {schema_str}"""
 
         logger.info(f"Processing human input: {event.content[:100]}...")
         response = await self.app.agent.run(
             user_prompt, response_schema=HUMAN_INPUT_RESPONSE_SCHEMA
         )
+        while not response.get("message_styler_enforced"):
+            await self.app.messaging.send_message(response["message"])
+            response = await self.app.agent.run(
+                ENFORCE_STYLER_PROMPT, response_schema=HUMAN_INPUT_RESPONSE_SCHEMA
+            )
         await self.app.event_logger.log_agent_response(
             f"HUMAN INPUT RESPONSE:\n\n{response['message']}"
         )
-        await self.app.messaging.send_message(response["message"])
         logger.info("Human input processing completed")
 
     async def run(self) -> None:
