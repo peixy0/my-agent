@@ -1,5 +1,6 @@
 """Tests for CommandExecutor implementations."""
 
+import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -97,10 +98,18 @@ class TestContainerCommandExecutor:
         mock_process.communicate.return_value = (b"", b"")
         mock_process.returncode = 0
 
-        with patch("asyncio.create_subprocess_exec", return_value=mock_process):
+        with patch(
+            "asyncio.create_subprocess_exec", return_value=mock_process
+        ) as mock_create:
             result = await executor.write_file("test.txt", "content")
 
         assert result["status"] == "success"
+        assert mock_create.call_count == 2
+        # Verify second call used stdin
+        assert mock_create.call_args_list[1].kwargs["stdin"] == asyncio.subprocess.PIPE
+        # Verify input was passed to communicate
+        assert mock_process.communicate.call_count == 2
+        assert mock_process.communicate.call_args_list[1].kwargs["input"] is not None
 
     @pytest.mark.asyncio
     async def test_edit_file_not_found(self):

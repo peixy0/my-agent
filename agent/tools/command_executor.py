@@ -71,33 +71,41 @@ class ContainerCommandExecutor(CommandExecutor):
         if not shutil.which(self.runtime):
             raise RuntimeError(f"Container runtime '{self.runtime}' not found in PATH")
 
-    async def _exec_in_container(self, command: str) -> tuple[str, str, int]:
+    async def _exec_in_container(
+        self, command: str, input_data: bytes | None = None
+    ) -> tuple[str, str, int]:
         """
         Execute a command in the container and wait for it to complete.
         If you need long running command, consider running it in background and use `run_command` to check its status.
         Returns stdout, stderr, returncode.
         """
-        full_command = [
-            self.runtime,
-            "exec",
-            "-w",
-            self.workdir,
-            self.container_name,
-            "bash",
-            "-l",
-            "-c",
-            command,
-        ]
+        full_command = [self.runtime, "exec"]
+
+        if input_data is not None:
+            full_command.append("-i")
+
+        full_command.extend(
+            [
+                "-w",
+                self.workdir,
+                self.container_name,
+                "bash",
+                "-l",
+                "-c",
+                command,
+            ]
+        )
 
         logger.debug(f"Executing in container: {command}")
 
         process = await asyncio.create_subprocess_exec(
             *full_command,
+            stdin=asyncio.subprocess.PIPE if input_data is not None else None,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
 
-        stdout, stderr = await process.communicate()
+        stdout, stderr = await process.communicate(input=input_data)
         return (
             stdout.decode("utf-8", errors="replace"),
             stderr.decode("utf-8", errors="replace"),
@@ -193,13 +201,15 @@ class ContainerCommandExecutor(CommandExecutor):
         mkdir_cmd = f"mkdir -p \"$(dirname '{filepath}')\""
         _ = await self._exec_in_container(mkdir_cmd)
 
-        # Use base64 encoding to safely transfer content
+        # Use base64 encoding to safely transfer content via stdin
         import base64
 
-        encoded = base64.b64encode(content.encode("utf-8")).decode("ascii")
-        command = f"echo '{encoded}' | base64 -d > '{filepath}'"
+        encoded_bytes = base64.b64encode(content.encode("utf-8"))
+        command = f"base64 -d > '{filepath}'"
 
-        _, stderr, returncode = await self._exec_in_container(command)
+        _, stderr, returncode = await self._exec_in_container(
+            command, input_data=encoded_bytes
+        )
 
         if returncode != 0:
             return {"status": "error", "message": stderr.strip()}

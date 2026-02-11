@@ -1,9 +1,13 @@
 import asyncio
+import json
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 import aiohttp
+import lark_oapi as lark
+
+from agent.core.events import HumanInputEvent
 
 logger = logging.getLogger(__name__)
 
@@ -168,3 +172,92 @@ class WXMessaging(Messaging):
                     )
         except Exception as e:
             logger.error(f"Failed to process message to human: {e}")
+
+
+@dataclass(frozen=True)
+class FeishuMessagingConfig:
+    app_id: str
+    app_secret: str
+    encrypt_key: str
+    verification_token: str
+
+
+class FeishuMessaging(Messaging):
+    def __init__(
+        self, config: FeishuMessagingConfig, event_queue: asyncio.Queue[MessagingEvent]
+    ):
+        self._config = config
+        self.event_queue = event_queue
+        # Initialize Lark Client for API requests (sending messages)
+        self.client = (
+            lark.Client.builder()
+            .app_id(self._config.app_id)
+            .app_secret(self._config.app_secret)
+            .log_level(lark.LogLevel.DEBUG)
+            .build()
+        )
+
+    async def run(self) -> None:
+        """Start the WebSocket client to receive messages."""
+
+        def on_message(data: lark.im.v1.P2ImMessageReceiveV1) -> None:
+            content_json = data.event.message.content
+            content_dict = json.loads(content_json)
+            text = content_dict.get("text", "")
+
+            logger.info(f"Feishu message received: {text}")
+            # Store the sender's open_id to reply later
+            if (
+                data.event.sender
+                and data.event.sender.sender_id
+                and data.event.sender.sender_id.open_id
+            ):
+                self.last_sender_id = data.event.sender.sender_id.open_id
+
+            if text:
+                asyncio.run_coroutine_threadsafe(
+                    self.event_queue.put(HumanInputEvent(content=text)),
+                    asyncio.get_running_loop(),
+                )
+
+        # Initialize WebSocket Client for receiving messages
+        ws_client = lark.ws.Client(
+            self._config.app_id,
+            self._config.app_secret,
+            event_handler=lark.EventDispatcherHandler.builder(
+                encrypt_key=self._config.encrypt_key,
+                verification_token=self._config.verification_token,
+            )
+            .register_p2_im_message_receive_v1(on_message)
+            .build(),
+            log_level=lark.LogLevel.DEBUG,
+        )
+
+        await asyncio.to_thread(ws_client.start)
+        logger.info("Feishu client started")
+
+    async def send_message(self, message: str) -> None:
+        """Send a message to Feishu using the last known sender."""
+        if not hasattr(self, "last_sender_id") or not self.last_sender_id:
+            logger.warning("Cannot send message: No recipient (last sender) found.")
+            return
+
+        request = (
+            lark.im.v1.CreateMessageRequest.builder()
+            .receive_id_type("open_id")
+            .request_body(
+                lark.im.v1.CreateMessageRequestBody.builder()
+                .receive_id(self.last_sender_id)
+                .msg_type("text")
+                .content(json.dumps({"text": message}))
+                .build()
+            )
+            .build()
+        )
+
+        response = await asyncio.to_thread(self.client.im.v1.message.create, request)
+
+        if not response.success():
+            logger.error(
+                f"Failed to send Feishu message: {response.code} - {response.msg}"
+            )

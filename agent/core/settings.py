@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     wechat_agentid: str = ""
     wechat_touser: str = "@all"
 
+    # Feishu settings
+    feishu_app_id: str = ""
+    feishu_app_secret: str = ""
+    feishu_encrypt_key: str = ""
+    feishu_verification_token: str = ""
+
     # API server settings
     api_host: str = "0.0.0.0"
     api_port: int = 8000

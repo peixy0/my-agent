@@ -11,6 +11,8 @@ import logging
 from agent.api.server import create_api
 from agent.core.event_logger import EventLogger
 from agent.core.messaging import (
+    FeishuMessaging,
+    FeishuMessagingConfig,
     Messaging,
     NullMessaging,
     WXMessaging,
@@ -77,6 +79,15 @@ class Application:
 
     def _create_messaging(self) -> Messaging:
         """Create the appropriate messaging backend."""
+        if self.settings.feishu_app_id and self.settings.feishu_app_secret:
+            config = FeishuMessagingConfig(
+                app_id=self.settings.feishu_app_id,
+                app_secret=self.settings.feishu_app_secret,
+                encrypt_key=self.settings.feishu_encrypt_key,
+                verification_token=self.settings.feishu_verification_token,
+            )
+            return FeishuMessaging(config, self.event_queue)
+
         if self.settings.wechat_corpid and self.settings.wechat_corpsecret:
             config = WXMessagingConfig(
                 corpid=self.settings.wechat_corpid,

@@ -112,13 +112,14 @@ And respond with a JSON object matching this schema: {schema_str}"""
             user_prompt, response_schema=HEARTBEAT_RESPONSE_SCHEMA
         )
         while not response.get("message_styler_enforced"):
-            await self.app.messaging.send_message(response["message"])
             response = await self.app.agent.run(
                 ENFORCE_STYLER_PROMPT, response_schema=HUMAN_INPUT_RESPONSE_SCHEMA
             )
         await self.app.event_logger.log_agent_response(
             f"REPORT DECISION: {'YES' if response['report_decision'] else 'NO'}\n\nREASONING:\n\n{response['report_decision_reasoning']}\n\nMESSAGE:\n\n{response['message']}"
         )
+        if response["report_decision"]:
+            await self.app.messaging.send_message(response["message"])
         logger.info("Heartbeat cycle completed")
 
     async def _process_human_input(self, event: HumanInputEvent) -> None:
@@ -151,13 +152,13 @@ Respond with a JSON object matching this schema: {schema_str}"""
             user_prompt, response_schema=HUMAN_INPUT_RESPONSE_SCHEMA
         )
         while not response.get("message_styler_enforced"):
-            await self.app.messaging.send_message(response["message"])
             response = await self.app.agent.run(
                 ENFORCE_STYLER_PROMPT, response_schema=HUMAN_INPUT_RESPONSE_SCHEMA
             )
         await self.app.event_logger.log_agent_response(
             f"HUMAN INPUT RESPONSE:\n\n{response['message']}"
         )
+        await self.app.messaging.send_message(response["message"])
         logger.info("Human input processing completed")
 
     async def run(self) -> None:
@@ -169,7 +170,7 @@ Respond with a JSON object matching this schema: {schema_str}"""
         logger.info(f"Wake interval: {self.app.settings.wake_interval_seconds} seconds")
 
         # Trigger initial heartbeat
-        await self.app.event_queue.put(HeartbeatEvent())
+        # await self.app.event_queue.put(HeartbeatEvent())
 
         while self.running:
             event = await self.app.event_queue.get()
