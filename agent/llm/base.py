@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from abc import ABC, abstractmethod
@@ -65,29 +66,24 @@ class LLMBase(ABC):
                 if reasoning:
                     logger.info(f"Agent Thought: {reasoning.strip()}")
 
-                tool_messages: list[dict[str, str]] = []
-                for tool_call in message.tool_calls:
+                async def _handle_tool_call(
+                    tool_call: Any, iteration: int
+                ) -> dict[str, str]:
                     tool_name = tool_call.function.name
                     tool_id = tool_call.id
-                    if current_iteration > max_iterations:
-                        tool_messages.append(
-                            {
-                                "role": "tool",
-                                "tool_call_id": tool_id,
-                                "content": "Error: max tool call iterations reached.",
-                            }
-                        )
-                        continue
+                    if iteration > max_iterations:
+                        return {
+                            "role": "tool",
+                            "tool_call_id": tool_id,
+                            "content": "Error: max tool call iterations reached.",
+                        }
 
                     if tool_name not in handlers:
-                        tool_messages.append(
-                            {
-                                "role": "tool",
-                                "tool_call_id": tool_id,
-                                "content": f"No such tool named {tool_name}",
-                            }
-                        )
-                        continue
+                        return {
+                            "role": "tool",
+                            "tool_call_id": tool_id,
+                            "content": f"No such tool named {tool_name}",
+                        }
 
                     logger.info(
                         f"Executing tool {tool_name} with args: {tool_call.function.arguments}"
@@ -130,13 +126,18 @@ class LLMBase(ABC):
 
                     await self.event_logger.log_tool_use(tool_name, args, result)
 
-                    tool_messages.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": tool_id,
-                            "content": json.dumps(result, ensure_ascii=False),
-                        }
-                    )
+                    return {
+                        "role": "tool",
+                        "tool_call_id": tool_id,
+                        "content": json.dumps(result, ensure_ascii=False),
+                    }
+
+                tool_messages = await asyncio.gather(
+                    *[
+                        _handle_tool_call(tool_call, current_iteration)
+                        for tool_call in message.tool_calls
+                    ]
+                )
 
                 messages.extend(tool_messages)
                 continue
