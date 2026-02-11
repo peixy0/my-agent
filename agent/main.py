@@ -103,7 +103,9 @@ class Scheduler:
 **Trigger:** Scheduled Heartbeat
 **Status:** No new human input detected.
 
-Please respond with a JSON object matching this schema: {schema_str}"""
+Work on your tasks.
+
+And respond with a JSON object matching this schema: {schema_str}"""
 
         logger.info("Executing agent heartbeat cycle")
         response = await self.app.agent.run(
@@ -115,7 +117,7 @@ Please respond with a JSON object matching this schema: {schema_str}"""
                 ENFORCE_STYLER_PROMPT, response_schema=HUMAN_INPUT_RESPONSE_SCHEMA
             )
         await self.app.event_logger.log_agent_response(
-            f"REPORT DECISION: {'YES' if response['report_decision'] else 'NO'}\n\nREASONING:\n{response['report_decision_reasoning']}\n\nMESSAGE:\n{response['message']}"
+            f"REPORT DECISION: {'YES' if response['report_decision'] else 'NO'}\n\nREASONING:\n\n{response['report_decision_reasoning']}\n\nMESSAGE:\n\n{response['message']}"
         )
         logger.info("Heartbeat cycle completed")
 

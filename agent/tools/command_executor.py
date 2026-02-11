@@ -134,8 +134,7 @@ class ContainerCommandExecutor(CommandExecutor):
 
     async def _read_whole_file(self, filepath: str) -> dict[str, Any]:
         """Read entire content from a file in the container."""
-        escaped_path = filepath.replace("'", "'\"'\"'")
-        read_cmd = f"cat '{escaped_path}'"
+        read_cmd = f"cat '{filepath}'"
         stdout, stderr, returncode = await self._exec_in_container(read_cmd)
 
         if returncode != 0:
@@ -153,10 +152,8 @@ class ContainerCommandExecutor(CommandExecutor):
         self, filepath: str, start_line: int = 1, limit: int = 200
     ) -> dict[str, Any]:
         """Read content from a file in the container with pagination."""
-        escaped_path = filepath.replace("'", "'\"'\"'")
-
         # Get total lines first
-        total_cmd = f"sed -n '$=' '{escaped_path}'"
+        total_cmd = f"sed -n '$=' '{filepath}'"
         stdout, stderr, returncode = await self._exec_in_container(total_cmd)
 
         if returncode != 0:
@@ -171,7 +168,7 @@ class ContainerCommandExecutor(CommandExecutor):
         # sed -n 'start,end p'
         start = max(1, start_line)
         end = start + limit - 1
-        read_cmd = f"sed -n '{start},{end}p' '{escaped_path}'"
+        read_cmd = f"sed -n '{start},{end}p' '{filepath}'"
 
         stdout, stderr, returncode = await self._exec_in_container(read_cmd)
 
@@ -192,17 +189,15 @@ class ContainerCommandExecutor(CommandExecutor):
     @override
     async def write_file(self, filepath: str, content: str) -> dict[str, Any]:
         """Write content to a file in the container."""
-        # Use heredoc to write content safely
-        escaped_path = filepath.replace("'", "'\"'\"'")
         # Ensure parent directory exists
-        mkdir_cmd = f"mkdir -p \"$(dirname '{escaped_path}')\""
+        mkdir_cmd = f"mkdir -p \"$(dirname '{filepath}')\""
         _ = await self._exec_in_container(mkdir_cmd)
 
         # Use base64 encoding to safely transfer content
         import base64
 
         encoded = base64.b64encode(content.encode("utf-8")).decode("ascii")
-        command = f"echo '{encoded}' | base64 -d > '{escaped_path}'"
+        command = f"echo '{encoded}' | base64 -d > '{filepath}'"
 
         _, stderr, returncode = await self._exec_in_container(command)
 
