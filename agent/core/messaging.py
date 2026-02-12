@@ -189,6 +189,7 @@ class FeishuMessaging(Messaging):
     ):
         self._config = config
         self.event_queue = event_queue
+        self.messages = []
         # Initialize Lark Client for API requests (sending messages)
         self.client = (
             lark.Client.builder()

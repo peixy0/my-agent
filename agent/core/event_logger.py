@@ -90,19 +90,11 @@ class EventLogger:
         for event in event_batch:
             try:
                 async with session.post(
-                    f"{self.event_url}/bot_internal",
+                    f"{self.event_url}/bot",
                     json=event,
                     headers=self._headers,
                     timeout=aiohttp.ClientTimeout(total=60),
                 ) as response:
                     _ = await response.read()
-                if event["type"] == "agent_response":
-                    async with session.post(
-                        f"{self.event_url}/bot",
-                        json=event,
-                        headers=self._headers,
-                        timeout=aiohttp.ClientTimeout(total=60),
-                    ) as response:
-                        _ = await response.read()
             except Exception as e:
                 logger.error(f"Error posting event to API: {e}")

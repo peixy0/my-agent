@@ -5,7 +5,6 @@ Runs the Scheduler (event loop) and FastAPI server concurrently.
 """
 
 import asyncio
-import json
 import logging
 from datetime import datetime
 from typing import Final
@@ -17,51 +16,6 @@ from agent.tools.command_executor import ensure_container_running
 logger = logging.getLogger(__name__)
 
 AgentEvent = HeartbeatEvent | HumanInputEvent
-
-HEARTBEAT_RESPONSE_SCHEMA: dict = {
-    "type": "object",
-    "properties": {
-        "report_decision_reasoning": {
-            "type": "string",
-            "description": "The reasoning behind the report decision.",
-        },
-        "report_decision": {
-            "type": "boolean",
-            "description": "Whether to send a report to the human user based on the reporting criteria.",
-        },
-        "message": {
-            "type": "string",
-            "description": "The message to report to the user with `message-styler` enforced (if report_decision is true) or empty (if false).",
-        },
-        "message_styler_enforced": {
-            "type": "boolean",
-            "description": "Whether the message is enforced with the `message-styler` skill.",
-        },
-    },
-    "required": [
-        "report_decision_reasoning",
-        "report_decision",
-        "message",
-        "message_styler_enforced",
-    ],
-}
-
-HUMAN_INPUT_RESPONSE_SCHEMA: dict = {
-    "type": "object",
-    "properties": {
-        "message": {
-            "type": "string",
-            "description": "The response to the human's message.",
-        },
-        "message_styler_enforced": {
-            "type": "boolean",
-            "description": "Whether the message is enfoced with the `message-styler` skill.",
-        },
-    },
-    "required": ["message", "message_styler_enforced"],
-}
-
-ENFORCE_STYLER_PROMPT = """Message must be styled with `message-styler` skill."""
 
 
 class Scheduler:
@@ -79,6 +33,7 @@ class Scheduler:
         self.app = app
         self.running = True
         self.heartbeat_task = None
+        self.conversation = []
 
     async def _ensure_container(self) -> bool:
         return await ensure_container_running(
@@ -96,67 +51,33 @@ class Scheduler:
         prompt = self.app.prompt_builder.build()
         self.app.agent.set_system_prompt(prompt)
 
-        schema_str = json.dumps(HEARTBEAT_RESPONSE_SCHEMA)
-        user_prompt = f"""# SYSTEM EVENT: AUTONOMOUS WAKE-UP
-**Trigger:** Scheduled Heartbeat
-**Status:** No new human input detected.
-
-Work on your tasks.
-
-And respond with a JSON object matching this schema: {schema_str}"""
-
         logger.info("Executing agent heartbeat cycle")
-        response = await self.app.agent.run(
-            user_prompt, response_schema=HEARTBEAT_RESPONSE_SCHEMA
-        )
-        while not response.get("message_styler_enforced"):
-            response = await self.app.agent.run(
-                ENFORCE_STYLER_PROMPT, response_schema=HUMAN_INPUT_RESPONSE_SCHEMA
-            )
+        messages = [{"role": "user", "content": "SYSTEM EVENT: Heartbeat"}]
+        response = await self.app.agent.run(messages)
+        response = response.strip()
         await self.app.event_logger.log_agent_response(
-            f"REPORT DECISION: {'YES' if response['report_decision'] else 'NO'}\n\nREASONING:\n\n{response['report_decision_reasoning']}\n\nMESSAGE:\n\n{response['message']}"
+            f"HEARTBEAT RESPONSE:\n\n{response}"
         )
-        if response["report_decision"]:
-            await self.app.messaging.send_message(response["message"])
+        if not response.endswith("NO_REPORT"):
+            await self.app.messaging.send_message(response)
         logger.info("Heartbeat cycle completed")
 
     async def _process_human_input(self, event: HumanInputEvent) -> None:
+        if event.content == "/new":
+            self.conversation = []
+            return
+
         prompt = self.app.prompt_builder.build()
         self.app.agent.set_system_prompt(prompt)
-
-        schema_str = json.dumps(HUMAN_INPUT_RESPONSE_SCHEMA)
-        user_prompt = f"""
-        # SYSTEM EVENT: HUMAN INTERRUPTION
-**Trigger:** Incoming Message
-**Source:** Human
-
-## INSTRUCTIONS
-1.  **Immediate Priority:** Pausing current task to handle user request.
-2.  **Update Alignment:**
-    *   Analyze the user's message. Does it change a priority? Does it introduce a new interest?
-    *   **Action:** Update `/workspace/USER.md` *before* executing the task. This ensures your future self remembers this preference.
-    *   *Example:* If user says "Stop looking for cheap flights," remove the Flight entry from `TRACK.md` and `USER.md` immediately.
-3.  **Execution:**
-    *   If the request is simple, do it and report.
-    *   If the request is complex (e.g., "Research this entire topic"), break it down into atomic steps, add them to `/workspace/TODO.md`, and report: "I have queued this into [Number] tasks. Starting tasks now."
-
-## USER MESSAGE:
-"{event.content}"
-
-Respond with a JSON object matching this schema: {schema_str}"""
+        self.conversation.append({"role": "user", "content": event.content})
 
         logger.info(f"Processing human input: {event.content[:100]}...")
-        response = await self.app.agent.run(
-            user_prompt, response_schema=HUMAN_INPUT_RESPONSE_SCHEMA
-        )
-        while not response.get("message_styler_enforced"):
-            response = await self.app.agent.run(
-                ENFORCE_STYLER_PROMPT, response_schema=HUMAN_INPUT_RESPONSE_SCHEMA
-            )
+        response = await self.app.agent.run(self.conversation.copy())
+        self.conversation.append({"role": "assistant", "content": response})
         await self.app.event_logger.log_agent_response(
-            f"HUMAN INPUT RESPONSE:\n\n{response['message']}"
+            f"HUMAN INPUT RESPONSE:\n\n{response}"
         )
-        await self.app.messaging.send_message(response["message"])
+        await self.app.messaging.send_message(response)
         logger.info("Human input processing completed")
 
     async def run(self) -> None:
