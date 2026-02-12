@@ -10,7 +10,7 @@ This document specifies a system-level autonomous LLM agent. The agent runs on t
 ┌─────────────────────────────────────────────────────────┐
 │                      Host Machine                       │
 │  ┌───────────────────────────────────────────────────┐  │
-│  │              Application (app.py)                 │  │
+│  │          AppWithDependencies (app.py)             │  │
 │  │         Composition Root / DI Container           │  │
 │  │                                                   │  │
 │  │  ┌──────────┐  ┌──────────┐  ┌──────────────────┐│  │
@@ -20,8 +20,8 @@ This document specifies a system-level autonomous LLM agent. The agent runs on t
 │  │  └──────────┘  └──────────┘  └──────────────────┘│  │
 │  │                                                   │  │
 │  │  ┌──────────┐  ┌──────────┐  ┌──────────────────┐│  │
-│  │  │Scheduler │  │  Event   │  │  FastAPI Server  ││  │
-│  │  │ (events) │◄─│  Queue   │◄─│  POST /api/input ││  │
+│  │  │Scheduler │  │  Event   │  │  ApiService      ││  │
+│  │  │ (events) │◄─│  Queue   │◄─│  POST /api/bot   ││  │
 │  │  └────┬─────┘  └──────────┘  └──────────────────┘│  │
 │  │       │                                           │  │
 │  │  ┌────▼──────────────────────────────────────┐   │  │
@@ -45,9 +45,10 @@ This document specifies a system-level autonomous LLM agent. The agent runs on t
 
 ## 3. Core Components
 
-### Application (`agent/app.py`)
+### AppWithDependencies (`agent/app.py`)
 - **Composition root** — single place where all dependencies are wired
-- Creates: Settings → EventLogger → Executor → ToolRegistry → LLMClient → Agent → API
+- Creates: Settings → EventLogger → Executor → ToolRegistry → LLMClient → Agent → Messaging → ApiService
+- `run()` method starts all background tasks (event logger, messaging, API server)
 - Replaces scattered module-level singletons with explicit construction
 
 ### Agent (`agent/llm/agent.py`)
@@ -85,8 +86,10 @@ This document specifies a system-level autonomous LLM agent. The agent runs on t
 - Dispatches to appropriate handler based on event type
 - Container lifecycle management
 
-### FastAPI Server (`agent/api/server.py`)
-- `POST /api/input` — accepts human input, queues `HumanInputEvent`
+### ApiService (`agent/api/server.py`)
+- `ApiService` ABC with `NullApiService` and `UvicornApiService` implementations
+- `UvicornApiService` wraps FastAPI with uvicorn server
+- `POST /api/bot` — accepts human input, queues `HumanInputEvent`
 - `GET /api/health` — health check
 - Shares `asyncio.Queue` with Scheduler for event delivery
 
@@ -145,7 +148,7 @@ sys-agent/
 ├── agent/
 │   ├── api/
 │   │   ├── __init__.py
-│   │   └── server.py          # FastAPI endpoints
+│   │   └── server.py          # ApiService ABC + FastAPI endpoints
 │   ├── core/
 │   │   ├── events.py          # Event types
 │   │   ├── event_logger.py    # Event logging
@@ -180,11 +183,11 @@ sys-agent/
 - **Open/Closed**: New tools added via `ToolRegistry.register()` — no existing code changes
 - **Liskov Substitution**: `CommandExecutor` implementations are interchangeable; `Messaging` implementations are interchangeable
 - **Interface Segregation**: `CommandExecutor` protocol is focused; `Messaging` ABC is minimal
-- **Dependency Inversion**: Core depends on abstractions (`LLMBase`, `CommandExecutor`, `Messaging`), not concretions. No module-level singletons — everything wired via composition root.
+- **Dependency Inversion**: Core depends on abstractions (`LLMBase`, `CommandExecutor`, `Messaging`, `ApiService`), not concretions. No module-level singletons — everything wired via composition root.
 
 ## 9. HTTP API
 
-### POST /api/input
+### POST /api/bot
 Accept human input for agent processing.
 
 **Request:**

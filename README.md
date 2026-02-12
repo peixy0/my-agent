@@ -1,12 +1,15 @@
 # Autonomous LLM Agent
 
-An autonomous LLM agent that runs on the host machine and uses a container as an isolated workspace environment.
+A system-level autonomous LLM agent that runs continuously on your host machine, using an isolated container workspace for safe command execution. The agent can work autonomously on scheduled tasks, respond to human input via HTTP API, and send notifications through WeChat Work or Feishu.
 
-## Architecture
+## Key Features
 
-- **Agent runs on host**: The Python agent runs on your machine
-- **Container as workspace**: Commands and file operations execute in a container at `/workspace`
-- **Persistent storage**: Workspace is bind-mounted for persistence
+- **Autonomous Mode**: Wakes up periodically to work on tasks, maintains context across sessions
+- **Container Isolation**: All commands execute safely in a containerized workspace
+- **HTTP API**: Accept human input via REST endpoint for interactive conversations
+- **Messaging Integration**: Send notifications via WeChat Work (企业微信) or Feishu (飞书)
+- **Extensible Skills**: Add custom skills as Markdown files to extend agent capabilities
+- **Event Logging**: Optional remote event streaming for monitoring and debugging
 
 ## Quick Start
 
@@ -50,40 +53,69 @@ The agent will:
 
 ## Configuration
 
-Create a `.env` file:
+Create a `.env` file with your settings:
 
 ```env
+# LLM Configuration (Required)
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=gpt-4o
 OPENAI_API_KEY=your_api_key_here
 
-# Optional: Container settings
+# Container Settings
 CONTAINER_NAME=sys-agent-workspace
-CONTAINER_RUNTIME=podman
+CONTAINER_RUNTIME=podman  # or docker
 
-# Optional: Adjust wake interval (seconds)
-WAKE_INTERVAL_SECONDS=900
+# Agent Behavior
+WAKE_INTERVAL_SECONDS=1800  # 30 minutes (default)
+TOOL_TIMEOUT=60  # seconds
 
-# Optional: WeChat Work integration for notifications
+# HTTP API (Optional)
+API_ENABLED=true
+API_HOST=0.0.0.0
+API_PORT=8000
+
+# WeChat Work Integration (Optional)
 WECHAT_CORPID=your_corp_id
 WECHAT_CORPSECRET=your_corp_secret
 WECHAT_AGENTID=your_agent_id
 WECHAT_TOUSER=@all
+
+# Feishu Integration (Optional)
+FEISHU_APP_ID=your_app_id
+FEISHU_APP_SECRET=your_app_secret
+FEISHU_ENCRYPT_KEY=your_encrypt_key
+FEISHU_VERIFICATION_TOKEN=your_verification_token
+
+# Event Logging (Optional)
+EVENT_API_URL=https://your-event-api.com/events
+EVENT_API_KEY=your_event_api_key
 ```
 
-### WeChat Work Integration
+### HTTP API
 
-The agent can send notifications via WeChat Work (企业微信). To enable:
+Enable the HTTP API to send messages to the agent:
 
-1. Get credentials from WeChat Work admin panel:
-   - `WECHAT_CORPID`: Your enterprise ID
-   - `WECHAT_CORPSECRET`: Application secret
-   - `WECHAT_AGENTID`: Application agent ID
-   - `WECHAT_TOUSER`: Target users (default: `@all`)
+```bash
+# Send a message to the agent
+curl -X POST http://localhost:8000/api/bot \
+  -H "Content-Type: application/json" \
+  -d '{"message": "What tasks are you working on?"}'
 
-2. Add credentials to your `.env` file
+# Health check
+curl http://localhost:8000/api/health
+```
 
-3. Use the `发送应用消息` tool to send messages
+### Messaging Integrations
+
+**WeChat Work (企业微信)**:
+1. Get credentials from WeChat Work admin panel
+2. Add `WECHAT_*` variables to `.env`
+3. Agent can send notifications automatically
+
+**Feishu (飞书)**:
+1. Create a Feishu app and get credentials
+2. Add `FEISHU_*` variables to `.env`
+3. Agent responds to messages and sends notifications
 
 ## Workspace
 
@@ -134,6 +166,8 @@ description: What this skill does
 
 ## Development
 
+For developers extending or contributing to the project, see [AGENT.md](AGENT.md) for architecture details and coding standards.
+
 ```bash
 # Install dev dependencies
 uv sync --group dev
@@ -141,11 +175,8 @@ uv sync --group dev
 # Run tests
 uv run pytest tests/ -v
 
-# Type checking
-uv run pyright agent/
-
-# Linting
-uv run ruff check agent/
+# Run all checks (format, lint, type check, test)
+uv run ruff format . && uv run ruff check . && uv run basedpyright && uv run pytest
 ```
 
 ## Container Commands
