@@ -10,9 +10,7 @@ import logging
 from datetime import datetime
 from typing import Final
 
-import uvicorn
-
-from agent.app import Application
+from agent.app import AppWithDependencies
 from agent.core.events import HeartbeatEvent, HumanInputEvent
 from agent.tools.command_executor import ensure_container_running
 
@@ -73,11 +71,11 @@ class Scheduler:
     Processes HeartbeatEvents (periodic) and HumanInputEvents (from API).
     """
 
-    app: Final[Application]
+    app: Final[AppWithDependencies]
     running: bool
     heartbeat_task: asyncio.Task[None] | None
 
-    def __init__(self, app: Application):
+    def __init__(self, app: AppWithDependencies):
         self.app = app
         self.running = True
         self.heartbeat_task = None
@@ -204,36 +202,14 @@ async def main() -> None:
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
-    app = Application()
+    # Start dependent background tasks (event logger, messaging, API server)
+    app = AppWithDependencies()
+    await app.run()
 
-    # Start event logger background worker
-    _ = asyncio.create_task(app.event_logger.run())
-
-    # Start messaging background worker
-    _ = asyncio.create_task(app.messaging.run())
-
-    # Create scheduler
+    # Create and run scheduler
     scheduler = Scheduler(app)
-
-    # Create uvicorn server config
-    config = uvicorn.Config(
-        app.api,
-        host=app.settings.api_host,
-        port=app.settings.api_port,
-        log_level="info",
-    )
-    server = uvicorn.Server(config)
-
-    logger.info(
-        f"Starting API server on {app.settings.api_host}:{app.settings.api_port}"
-    )
     logger.info("Starting scheduler...")
-
-    # Run both concurrently
-    await asyncio.gather(
-        scheduler.run(),
-        server.serve(),
-    )
+    await scheduler.run()
 
 
 if __name__ == "__main__":

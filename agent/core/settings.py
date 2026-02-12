@@ -50,6 +50,7 @@ class Settings(BaseSettings):
     feishu_verification_token: str = ""
 
     # API server settings
+    api_enabled: bool = False
     api_host: str = "0.0.0.0"
     api_port: int = 8000
 

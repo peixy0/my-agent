@@ -8,16 +8,9 @@ construction, making the dependency graph visible and testable.
 import asyncio
 import logging
 
-from agent.api.server import create_api
+from agent.api.server import ApiService, create_api_service
 from agent.core.event_logger import EventLogger
-from agent.core.messaging import (
-    FeishuMessaging,
-    FeishuMessagingConfig,
-    Messaging,
-    NullMessaging,
-    WXMessaging,
-    WXMessagingConfig,
-)
+from agent.core.messaging import create_messaging
 from agent.core.settings import Settings, get_settings
 from agent.llm.agent import Agent
 from agent.llm.factory import LLMFactory
@@ -30,11 +23,12 @@ from agent.tools.toolbox import register_default_tools
 logger = logging.getLogger(__name__)
 
 
-class Application:
+class AppWithDependencies:
     """
-    Holds the fully-wired object graph.
+    Holds the fully-wired object graph and manages background tasks.
 
     Created once in main(), passed to the Scheduler and API server.
+    Call run() to start dependent background tasks (event logger, messaging).
     """
 
     def __init__(self, settings: Settings | None = None):
@@ -72,29 +66,19 @@ class Application:
         self.prompt_builder = SystemPromptBuilder(self.settings, self.skill_loader)
 
         # Messaging
-        self.messaging: Messaging = self._create_messaging()
+        self.messaging = create_messaging(self.settings, self.event_queue)
 
-        # FastAPI
-        self.api = create_api(self.event_queue)
+        # API Service
+        self.api_service: ApiService = create_api_service(
+            self.settings, self.event_queue
+        )
 
-    def _create_messaging(self) -> Messaging:
-        """Create the appropriate messaging backend."""
-        if self.settings.feishu_app_id and self.settings.feishu_app_secret:
-            config = FeishuMessagingConfig(
-                app_id=self.settings.feishu_app_id,
-                app_secret=self.settings.feishu_app_secret,
-                encrypt_key=self.settings.feishu_encrypt_key,
-                verification_token=self.settings.feishu_verification_token,
-            )
-            return FeishuMessaging(config, self.event_queue)
+        self._background_tasks: list[asyncio.Task] = []
 
-        if self.settings.wechat_corpid and self.settings.wechat_corpsecret:
-            config = WXMessagingConfig(
-                corpid=self.settings.wechat_corpid,
-                corpsecret=self.settings.wechat_corpsecret,
-                agentid=self.settings.wechat_agentid,
-                touser=self.settings.wechat_touser,
-                token_refresh_interval=self.settings.wechat_token_refresh_interval,
-            )
-            return WXMessaging(config)
-        return NullMessaging()
+    async def run(self) -> None:
+        """Start dependent background tasks (event logger, messaging, API server)."""
+        self._background_tasks = [
+            asyncio.create_task(self.event_logger.run()),
+            asyncio.create_task(self.messaging.run()),
+            asyncio.create_task(self.api_service.run()),
+        ]

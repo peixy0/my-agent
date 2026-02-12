@@ -8,6 +8,7 @@ import aiohttp
 import lark_oapi as lark
 
 from agent.core.events import HumanInputEvent
+from agent.core.settings import Settings
 
 logger = logging.getLogger(__name__)
 
@@ -28,11 +29,11 @@ class RefreshToken:
 
 
 @dataclass
-class MessageEvent:
+class SendMessageRequest:
     content: str
 
 
-MessagingEvent = MessageEvent | RefreshToken
+MessagingEvent = SendMessageRequest | RefreshToken
 
 
 class NullMessaging(Messaging):
@@ -65,13 +66,13 @@ class WXMessaging(Messaging):
         self.refresh_task = asyncio.create_task(self._refresh_token_task())
         while True:
             event = await self.event_queue.get()
-            if isinstance(event, MessageEvent):
+            if isinstance(event, SendMessageRequest):
                 await self._message_to_human(event.content)
             else:
                 await self._refresh_token()
 
     async def send_message(self, message: str) -> None:
-        await self.event_queue.put(MessageEvent(content=message))
+        await self.event_queue.put(SendMessageRequest(content=message))
 
     async def _refresh_token_task(self) -> None:
         while True:
@@ -238,7 +239,7 @@ class FeishuMessaging(Messaging):
 
     async def send_message(self, message: str) -> None:
         """Send a message to Feishu using the last known sender."""
-        if not hasattr(self, "last_sender_id") or not self.last_sender_id:
+        if not self.last_sender_id:
             logger.warning("Cannot send message: No recipient (last sender) found.")
             return
 
@@ -261,3 +262,26 @@ class FeishuMessaging(Messaging):
             logger.error(
                 f"Failed to send Feishu message: {response.code} - {response.msg}"
             )
+
+
+def create_messaging(settings: Settings, event_queue: asyncio.Queue) -> Messaging:
+    """Create the appropriate messaging backend."""
+    if settings.feishu_app_id and settings.feishu_app_secret:
+        config = FeishuMessagingConfig(
+            app_id=settings.feishu_app_id,
+            app_secret=settings.feishu_app_secret,
+            encrypt_key=settings.feishu_encrypt_key,
+            verification_token=settings.feishu_verification_token,
+        )
+        return FeishuMessaging(config, event_queue)
+
+    if settings.wechat_corpid and settings.wechat_corpsecret:
+        config = WXMessagingConfig(
+            corpid=settings.wechat_corpid,
+            corpsecret=settings.wechat_corpsecret,
+            agentid=settings.wechat_agentid,
+            touser=settings.wechat_touser,
+            token_refresh_interval=settings.wechat_token_refresh_interval,
+        )
+        return WXMessaging(config)
+    return NullMessaging()
