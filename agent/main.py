@@ -55,7 +55,7 @@ class Scheduler:
         logger.info("Heartbeat cycle completed")
 
     async def _process_human_input(self, event: HumanInputEvent) -> None:
-        if event.message == "\new":
+        if event.message == "/new":
             self.sessions[event.session_key] = []
             await self.app.messaging.send_message(
                 event.session_key, "New session started"
