@@ -28,7 +28,19 @@ class SystemPromptBuilder:
         operating_system = platform.system()
         session_info = "" if not session_key else f"**Session Key:** {session_key}"
 
-        context_content = "(empty)"
+        identity_context = "# IDENTITY.md\n\n(empty)"
+        user_context = "# USER.md\n\n(empty)"
+        context_content = "# CONTEXT.md\n\n(empty)"
+        try:
+            with Path(f"{self._settings.workspace_dir}/IDENTITY.md").open() as f:
+                identity_context = f.read()
+        except FileNotFoundError:
+            pass
+        try:
+            with Path(f"{self._settings.workspace_dir}/USER.md").open() as f:
+                user_context = f.read()
+        except FileNotFoundError:
+            pass
         try:
             with Path(f"{self._settings.workspace_dir}/CONTEXT.md").open() as f:
                 context_content = f.read()
@@ -62,7 +74,10 @@ You can use them to interact with the world or guide yourself to perform actions
 
 Your working directory is `/workspace`.
 Treat this directory as the single global workspace for file operations unless explicitly instructed otherwise.
-/workspace/CONTEXT.md is loaded as overall context.
+
+{identity_context}
+
+{user_context}
 
 {context_content}
 

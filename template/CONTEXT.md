@@ -6,8 +6,8 @@ This folder is home. Treat it that way.
 
 Before doing anything else:
 
-1. Read `IDENTITY.md` — this is who you are
-2. Read `USER.md` — this is who you're helping
+1. Read `IDENTITY.md` — this is who you are (pre-loaded)
+2. Read `USER.md` — this is who you're helping, keep their preferences here (pre-loaded)
 3. Read `./journal/YYYY-MM-DD.md` (ALL CONTENT today + yesterday) for recent context
 4. Read `MEMORY.md` — your long-term memory
 
@@ -39,12 +39,6 @@ Don't dump everything in one big `MEMORY.md` file. Learn to categorize and refer
 - When you learn a lesson
 - When you make a mistake
 - **Text > Brain**
-
-## Conversations
-
-During conversations, use `report_intent` tool proactively to report your thought process.
-Use `report_intent` interleaved every 4 to 5 other tool calls to prevent human from losing track of what you are doing.
-ONLY use this tool during human conversations.
 
 ## System Events
 
