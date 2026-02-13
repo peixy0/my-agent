@@ -43,7 +43,7 @@ Capture what matters. Decisions, context, things to remember. Skip the secrets u
 
 When you receive a heartbeat event. Don't just reply `NO_REPORT` every time. Use heartbeats productively!
 
-You are free to edit `TODO.md` with more tasks to do more ideas to explore.
+You are free to edit `TODO.md` with more tasks to do and more ideas to explore. Add some wild attempts once in a while.
 
 **When to reach out:**
 

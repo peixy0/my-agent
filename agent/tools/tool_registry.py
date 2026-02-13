@@ -18,7 +18,7 @@ class ToolRegistry:
     Holds tool name -> (schema, handler) mappings.
 
     Wraps each handler with timeout and error handling so the
-    Agent and LLMBase don't have to.
+    Agent and OpenAIProvider don't have to.
     """
 
     def __init__(self, tool_timeout: int = 60):

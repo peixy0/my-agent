@@ -9,7 +9,7 @@ System prompt construction is handled by SystemPromptBuilder (SRP).
 import logging
 from typing import Final
 
-from agent.llm.base import LLMBase
+from agent.llm.openai import OpenAIProvider
 
 logger = logging.getLogger(__name__)
 
@@ -24,11 +24,11 @@ class Agent:
     - Validate structured responses against schemas
     """
 
-    llm_client: Final[LLMBase]
+    llm_client: Final[OpenAIProvider]
     messages: list[dict[str, str]]
     system_prompt: str
 
-    def __init__(self, llm_client: LLMBase):
+    def __init__(self, llm_client: OpenAIProvider):
         self.llm_client = llm_client
         self.messages = []
         self.system_prompt = ""

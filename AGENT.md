@@ -18,7 +18,7 @@ AppWithDependencies (app.py)
   ├── EventLogger (remote logging)
   ├── ContainerCommandExecutor (command execution)
   ├── ToolRegistry (tool management)
-  ├── LLMClient (OpenAI-compatible API)
+  ├── OpenAIProvider (OpenAI-compatible API)
   ├── Agent (conversation loop)
   ├── Messaging (WeChat/Feishu/Null)
   └── ApiService (FastAPI/Null)
@@ -159,30 +159,6 @@ class MyApiService(ApiService):
         ...
 ```
 
-### 4. Adding New LLM Providers
-
-The `LLMBase` abstraction supports any LLM provider.
-
-**Location**: `agent/llm/base.py`, `agent/llm/factory.py`
-
-**Step 1**: Implement `LLMBase`
-```python
-class MyLLMClient(LLMBase):
-    async def create_chat_completion(self, messages, tools, response_format):
-        # Call your LLM provider's API
-        ...
-```
-
-**Step 2**: Update `LLMFactory`
-```python
-class LLMFactory:
-    @staticmethod
-    def create(url, model, api_key, ...) -> LLMBase:
-        if "my-provider" in url:
-            return MyLLMClient(...)
-        return OpenAIClient(...)  # default
-```
-
 ## Design Patterns
 
 ### 1. Strategy Pattern
@@ -207,9 +183,8 @@ await event_queue.put(HumanInputEvent(content=message))
 
 ### 4. Dependency Inversion Principle
 Core logic depends on **abstractions**, not concretions:
-- `Messaging` (not `WXMessaging`)
+- `Messaging` (not `FeishuMessaging`)
 - `ApiService` (not `UvicornApiService`)
-- `LLMBase` (not `OpenAIClient`)
 - `CommandExecutor` protocol (not specific runtime)
 
 ## Event-Driven Scheduler
@@ -333,7 +308,6 @@ agent/
 │   └── settings.py         # Configuration (Pydantic)
 ├── llm/
 │   ├── agent.py            # Conversation loop
-│   ├── base.py             # LLMBase abstraction
 │   ├── factory.py          # LLM client factory
 │   ├── openai.py           # OpenAI implementation
 │   └── prompt_builder.py   # System prompt construction

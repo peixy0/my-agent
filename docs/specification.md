@@ -47,7 +47,7 @@ This document specifies a system-level autonomous LLM agent. The agent runs on t
 
 ### AppWithDependencies (`agent/app.py`)
 - **Composition root** — single place where all dependencies are wired
-- Creates: Settings → EventLogger → Executor → ToolRegistry → LLMClient → Agent → Messaging → ApiService
+- Creates: Settings → EventLogger → Executor → ToolRegistry → OpenAIProvider → Agent → Messaging → ApiService
 - `run()` method starts all background tasks (event logger, messaging, API server)
 - Replaces scattered module-level singletons with explicit construction
 
@@ -183,7 +183,7 @@ sys-agent/
 - **Open/Closed**: New tools added via `ToolRegistry.register()` — no existing code changes
 - **Liskov Substitution**: `CommandExecutor` implementations are interchangeable; `Messaging` implementations are interchangeable
 - **Interface Segregation**: `CommandExecutor` protocol is focused; `Messaging` ABC is minimal
-- **Dependency Inversion**: Core depends on abstractions (`LLMBase`, `CommandExecutor`, `Messaging`, `ApiService`), not concretions. No module-level singletons — everything wired via composition root.
+- **Dependency Inversion**: Core depends on abstractions (`OpenAIProvider`, `CommandExecutor`, `Messaging`, `ApiService`), not concretions. No module-level singletons — everything wired via composition root.
 
 ## 9. HTTP API
 

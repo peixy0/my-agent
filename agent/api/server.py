@@ -88,7 +88,12 @@ def create_api(event_queue: asyncio.Queue) -> FastAPI:
     async def submit_input(request: HumanInputRequest) -> HumanInputResponse:
         """Accept human input and queue it for the agent."""
         logger.info(f"Received human input: {request.message[:100]}...")
-        await event_queue.put(HumanInputEvent(content=request.message))
+        await event_queue.put(
+            HumanInputEvent(
+                conversation=[{"role": "user", "content": request.message}],
+                reply_fut=asyncio.Future(),
+            )
+        )
         return HumanInputResponse()
 
     @app.get("/api/health", response_model=HealthResponse)

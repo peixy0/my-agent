@@ -42,7 +42,8 @@ class TestAPI:
         assert not event_queue.empty()
         event = event_queue.get_nowait()
         assert isinstance(event, HumanInputEvent)
-        assert event.content == "Hello from test"
+        assert len(event.conversation) == 1
+        assert event.conversation[-1]["content"] == "Hello from test"
 
     def test_submit_input_validation_error(self, client):
         """Test POST /api/bot with invalid body returns 422."""

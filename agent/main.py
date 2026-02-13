@@ -59,25 +59,21 @@ class Scheduler:
             f"HEARTBEAT RESPONSE:\n\n{response}"
         )
         if not response.endswith("NO_REPORT"):
-            await self.app.messaging.send_message(response)
+            await self.app.messaging.notify(response)
         logger.info("Heartbeat cycle completed")
 
     async def _process_human_input(self, event: HumanInputEvent) -> None:
-        if event.content == "/new":
-            self.conversation = []
-            return
-
         prompt = self.app.prompt_builder.build()
         self.app.agent.set_system_prompt(prompt)
-        self.conversation.append({"role": "user", "content": event.content})
 
-        logger.info(f"Processing human input: {event.content[:100]}...")
-        response = await self.app.agent.run(self.conversation.copy())
-        self.conversation.append({"role": "assistant", "content": response})
+        logger.info(
+            f"Processing human input: {event.conversation[-1]['content'][:100]}..."
+        )
+        response = await self.app.agent.run(event.conversation)
         await self.app.event_logger.log_agent_response(
             f"HUMAN INPUT RESPONSE:\n\n{response}"
         )
-        await self.app.messaging.send_message(response)
+        event.reply_fut.set_result(response)
         logger.info("Human input processing completed")
 
     async def run(self) -> None:

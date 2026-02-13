@@ -4,7 +4,6 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-import aiohttp
 import lark_oapi as lark
 
 from agent.core.events import HumanInputEvent
@@ -20,159 +19,15 @@ class Messaging(ABC):
     async def run(self) -> None: ...
 
     @abstractmethod
-    async def send_message(self, message: str) -> None: ...
-
-
-@dataclass
-class RefreshToken:
-    pass
-
-
-@dataclass
-class SendMessageRequest:
-    content: str
-
-
-MessagingEvent = SendMessageRequest | RefreshToken
+    async def notify(self, message: str) -> None: ...
 
 
 class NullMessaging(Messaging):
     async def run(self) -> None:
         pass
 
-    async def send_message(self, message: str) -> None:
+    async def notify(self, message: str) -> None:
         pass
-
-
-@dataclass(frozen=True)
-class WXMessagingConfig:
-    """Explicit config for WXMessaging — no global settings dependency."""
-
-    corpid: str
-    corpsecret: str
-    agentid: str
-    touser: str = "@all"
-    token_refresh_interval: int = 3600 * 4
-
-
-class WXMessaging(Messaging):
-    def __init__(self, config: WXMessagingConfig):
-        self._config = config
-        self.event_queue: asyncio.Queue[MessagingEvent] = asyncio.Queue()
-        self.access_token: str | None = None
-        self.refresh_task: asyncio.Task[None] | None = None
-
-    async def run(self) -> None:
-        self.refresh_task = asyncio.create_task(self._refresh_token_task())
-        while True:
-            event = await self.event_queue.get()
-            if isinstance(event, SendMessageRequest):
-                await self._message_to_human(event.content)
-            else:
-                await self._refresh_token()
-
-    async def send_message(self, message: str) -> None:
-        await self.event_queue.put(SendMessageRequest(content=message))
-
-    async def _refresh_token_task(self) -> None:
-        while True:
-            await self.event_queue.put(RefreshToken())
-            await asyncio.sleep(self._config.token_refresh_interval)
-
-    async def _refresh_token(self) -> None:
-        token_url = "https://qyapi.weixin.qq.com/cgi-bin/gettoken"
-        token_params = {
-            "corpid": self._config.corpid,
-            "corpsecret": self._config.corpsecret,
-        }
-        async with (
-            aiohttp.ClientSession() as session,
-            session.get(
-                token_url,
-                params=token_params,
-                timeout=aiohttp.ClientTimeout(total=60.0),
-            ) as response,
-        ):
-            token_data = await response.json()
-            if token_data.get("errcode") == 0:
-                self.access_token = token_data.get("access_token")
-                logger.info("Token refreshed successfully")
-            else:
-                logger.error(f"Failed to refresh token: {token_data.get('errmsg')}")
-
-    async def _send_raw_text(
-        self, session: aiohttp.ClientSession, content: str, continued_count: int = 0
-    ) -> None:
-        if not self.access_token:
-            return
-
-        content = content.strip()
-        if not content:
-            return
-
-        if continued_count > 0:
-            content = f"(...continued part {continued_count})\n\n" + content
-
-        url = "https://qyapi.weixin.qq.com/cgi-bin/message/send"
-        params = {"access_token": self.access_token}
-        payload = {
-            "touser": self._config.touser,
-            "msgtype": "text",
-            "agentid": int(self._config.agentid),
-            "text": {"content": content},
-            "safe": 0,
-        }
-        try:
-            async with session.post(
-                url,
-                params=params,
-                json=payload,
-                timeout=aiohttp.ClientTimeout(total=60.0),
-            ) as response:
-                data = await response.json()
-                if data.get("errcode") != 0:
-                    logger.error(f"WeChat send error: {data.get('errmsg')}")
-        except Exception as e:
-            logger.error(f"WeChat request failed: {e}")
-
-    async def _message_to_human(self, message: str) -> None:
-        if not self.access_token or not message:
-            return
-
-        lines = message.splitlines()
-        batch: list[str] = []
-        batch_size = 0
-        MAX_BYTES = 800
-        continued_count = 0
-
-        try:
-            async with aiohttp.ClientSession() as session:
-                for line in lines:
-                    line_len = len(line.encode("utf-8"))
-
-                    if batch and (batch_size + line_len + len(batch)) > MAX_BYTES:
-                        await self._send_raw_text(
-                            session, "\n".join(batch), continued_count
-                        )
-                        batch, batch_size = [], 0
-                        continued_count += 1
-
-                    batch.append(line)
-                    batch_size += line_len
-
-                    if (batch_size + len(batch) - 1) > MAX_BYTES:
-                        await self._send_raw_text(
-                            session, "\n".join(batch), continued_count
-                        )
-                        batch, batch_size = [], 0
-                        continued_count += 1
-
-                if batch:
-                    await self._send_raw_text(
-                        session, "\n".join(batch), continued_count
-                    )
-        except Exception as e:
-            logger.error(f"Failed to process message to human: {e}")
 
 
 @dataclass(frozen=True)
@@ -181,15 +36,23 @@ class FeishuMessagingConfig:
     app_secret: str
     encrypt_key: str
     verification_token: str
+    notify_channel_id: str
+
+
+@dataclass(frozen=True)
+class FeishuMessageEvent:
+    content: str
+    sender_id: str
 
 
 class FeishuMessaging(Messaging):
     def __init__(
-        self, config: FeishuMessagingConfig, event_queue: asyncio.Queue[MessagingEvent]
+        self, config: FeishuMessagingConfig, event_queue: asyncio.Queue[HumanInputEvent]
     ):
         self._config = config
         self.event_queue = event_queue
-        self.messages = []
+        self.message_queue: asyncio.Queue[FeishuMessageEvent] = asyncio.Queue()
+        self.conversations = {}
         # Initialize Lark Client for API requests (sending messages)
         self.client = (
             lark.Client.builder()
@@ -205,20 +68,23 @@ class FeishuMessaging(Messaging):
         def on_message(data: lark.im.v1.P2ImMessageReceiveV1) -> None:
             content_json = data.event.message.content
             content_dict = json.loads(content_json)
-            text = content_dict.get("text", "")
+            logger.info(f"Feishu event received: {content_json}")
 
-            logger.info(f"Feishu message received: {text}")
-            # Store the sender's open_id to reply later
-            if (
+            if not (
                 data.event.sender
                 and data.event.sender.sender_id
                 and data.event.sender.sender_id.open_id
             ):
-                self.last_sender_id = data.event.sender.sender_id.open_id
-
+                return
+            sender_id = data.event.sender.sender_id.open_id
+            text = content_dict.get("text")
+            if not text:
+                return
             if text:
                 asyncio.run_coroutine_threadsafe(
-                    self.event_queue.put(HumanInputEvent(content=text)),
+                    self.message_queue.put(
+                        FeishuMessageEvent(content=text, sender_id=sender_id)
+                    ),
                     asyncio.get_running_loop(),
                 )
 
@@ -237,19 +103,40 @@ class FeishuMessaging(Messaging):
 
         await asyncio.to_thread(ws_client.start)
         logger.info("Feishu client started")
+        await self._event_loop()
 
-    async def send_message(self, message: str) -> None:
+    async def notify(self, message: str) -> None:
+        """Notify method for sending messages, can be used by the agent to send proactive messages."""
+        await self._send_message(self._config.notify_channel_id, message)
+
+    async def _event_loop(self) -> None:
+        """Process incoming messages and manage conversations."""
+        while True:
+            message_event = await self.message_queue.get()
+            if message_event.content == "/new":
+                self.conversations[message_event.sender_id] = []
+                continue
+            conversation = self.conversations.get(message_event.sender_id, [])
+            conversation.append({"role": "user", "content": message_event.content})
+            self.conversations[message_event.sender_id] = conversation.copy()
+            fut = asyncio.Future()
+            await self.event_queue.put(
+                HumanInputEvent(conversation=conversation, reply_fut=fut)
+            )
+            reply = await fut
+            self.conversations[message_event.sender_id].append(
+                {"role": "assistant", "content": reply}
+            )
+            await self._send_message(message_event.sender_id, reply)
+
+    async def _send_message(self, sender_id: str, message: str) -> None:
         """Send a message to Feishu using the last known sender."""
-        if not self.last_sender_id:
-            logger.warning("Cannot send message: No recipient (last sender) found.")
-            return
-
         request = (
             lark.im.v1.CreateMessageRequest.builder()
             .receive_id_type("open_id")
             .request_body(
                 lark.im.v1.CreateMessageRequestBody.builder()
-                .receive_id(self.last_sender_id)
+                .receive_id(sender_id)
                 .msg_type("text")
                 .content(json.dumps({"text": message}))
                 .build()
@@ -258,7 +145,6 @@ class FeishuMessaging(Messaging):
         )
 
         response = await asyncio.to_thread(self.client.im.v1.message.create, request)
-
         if not response.success():
             logger.error(
                 f"Failed to send Feishu message: {response.code} - {response.msg}"
@@ -273,16 +159,7 @@ def create_messaging(settings: Settings, event_queue: asyncio.Queue) -> Messagin
             app_secret=settings.feishu_app_secret,
             encrypt_key=settings.feishu_encrypt_key,
             verification_token=settings.feishu_verification_token,
+            notify_channel_id=settings.feishu_notify_channel_id,
         )
         return FeishuMessaging(config, event_queue)
-
-    if settings.wechat_corpid and settings.wechat_corpsecret:
-        config = WXMessagingConfig(
-            corpid=settings.wechat_corpid,
-            corpsecret=settings.wechat_corpsecret,
-            agentid=settings.wechat_agentid,
-            touser=settings.wechat_touser,
-            token_refresh_interval=settings.wechat_token_refresh_interval,
-        )
-        return WXMessaging(config)
     return NullMessaging()

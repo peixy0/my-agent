@@ -36,18 +36,12 @@ class Settings(BaseSettings):
     event_api_url: str = ""
     event_api_key: str = ""
 
-    # WeChat Work settings
-    wechat_token_refresh_interval: int = 3600 * 4  # 4 hours
-    wechat_corpid: str = ""
-    wechat_corpsecret: str = ""
-    wechat_agentid: str = ""
-    wechat_touser: str = "@all"
-
     # Feishu settings
     feishu_app_id: str = ""
     feishu_app_secret: str = ""
     feishu_encrypt_key: str = ""
     feishu_verification_token: str = ""
+    feishu_notify_channel_id: str = ""
 
     # API server settings
     api_enabled: bool = False
