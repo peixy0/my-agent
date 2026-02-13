@@ -53,10 +53,7 @@ class AppWithDependencies:
         register_default_tools(self.tool_registry, self.executor, self.skill_loader)
 
         # LLM client
-        self.llm_client = LLMFactory.create(
-            url=self.settings.openai_base_url,
-            model=self.settings.openai_model,
-            api_key=self.settings.openai_api_key,
+        self.llm_client = LLMFactory(self.settings).create(
             event_logger=self.event_logger,
             tool_registry=self.tool_registry,
         )

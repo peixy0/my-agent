@@ -30,9 +30,9 @@ class TestAPI:
         assert response.json() == {"status": "ok"}
 
     def test_submit_input(self, client, event_queue):
-        """Test POST /api/input queues a HumanInputEvent."""
+        """Test POST /api/bot queues a HumanInputEvent."""
         response = client.post(
-            "/api/input",
+            "/api/bot",
             json={"message": "Hello from test"},
         )
         assert response.status_code == 200
@@ -45,14 +45,14 @@ class TestAPI:
         assert event.content == "Hello from test"
 
     def test_submit_input_validation_error(self, client):
-        """Test POST /api/input with invalid body returns 422."""
-        response = client.post("/api/input", json={})
+        """Test POST /api/bot with invalid body returns 422."""
+        response = client.post("/api/bot", json={})
         assert response.status_code == 422
 
     def test_submit_input_empty_message(self, client, event_queue):
-        """Test POST /api/input with empty message still queues."""
+        """Test POST /api/bot with empty message still queues."""
         response = client.post(
-            "/api/input",
+            "/api/bot",
             json={"message": ""},
         )
         assert response.status_code == 200
