@@ -23,11 +23,10 @@ class Settings(BaseSettings):
     # Agent settings
     tool_timeout: int = 60
 
-    # Workspace paths (relative to host, mapped to /workspace in container)
-    workspace_dir: str = "./workspace"
-    journal_dir: str = "./workspace/journal"
-    event_log_file: str = "./events.jsonl"
-    skills_dir: str = "./workspace/.skills"
+    # Workspace paths
+    cwd: str = "./workspace"
+    workspace_dir: str = "./"
+    skills_dir: str = "./.skills"
 
     # Autonomous mode settings
     wake_interval_seconds: int = 1800  # 30 minutes

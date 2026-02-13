@@ -61,6 +61,7 @@ class FeishuMessaging(Messaging):
             lark.Client.builder()
             .app_id(self._config.app_id)
             .app_secret(self._config.app_secret)
+            .log_level(lark.LogLevel.WARNING)
             .build()
         )
 
@@ -136,8 +137,8 @@ class FeishuMessaging(Messaging):
             log_level=lark.LogLevel.DEBUG,
         )
 
+        logger.info("Feishu client running")
         await asyncio.to_thread(ws_client.start)
-        logger.info("Feishu client started")
 
     async def notify(self, message: str) -> None:
         """Notify method for sending messages, can be used by the agent to send proactive messages."""

@@ -12,7 +12,7 @@ from typing import Final
 from agent.app import AppWithDependencies
 from agent.core.events import HeartbeatEvent, HumanInputEvent
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("agent")
 
 AgentEvent = HeartbeatEvent | HumanInputEvent
 
@@ -99,10 +99,14 @@ class Scheduler:
 
 async def main() -> None:
     """Entry point: runs Scheduler + FastAPI server concurrently."""
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    logger_stream = logging.StreamHandler()
+    logger_stream.setFormatter(
+        logging.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        )
     )
+    logger.addHandler(logger_stream)
+    logger.setLevel(logging.DEBUG)
 
     # Start dependent background tasks (event logger, messaging, API server)
     app = AppWithDependencies()

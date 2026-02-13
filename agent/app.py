@@ -7,6 +7,7 @@ construction, making the dependency graph visible and testable.
 
 import asyncio
 import logging
+import os
 
 from agent.api.server import ApiService, create_api_service
 from agent.core.event_logger import EventLogger
@@ -78,6 +79,8 @@ class AppWithDependencies:
 
     async def run(self) -> None:
         """Start dependent background tasks (event logger, messaging, API server)."""
+        os.chdir(self.settings.cwd)
+
         self._background_tasks = [
             asyncio.create_task(self.event_logger.run()),
             asyncio.create_task(self.messaging.run()),

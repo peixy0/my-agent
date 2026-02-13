@@ -15,8 +15,6 @@ def mock_settings():
         container_name="test-container",
         container_runtime="podman",
         workspace_dir="/tmp/test-workspace",
-        journal_dir="/tmp/test-workspace/journal",
-        event_log_file="/tmp/test-workspace/events.jsonl",
         skills_dir="/tmp/test-workspace/.skills",
         wake_interval_seconds=60,
         api_host="127.0.0.1",
