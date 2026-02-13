@@ -8,7 +8,7 @@ Before doing anything else:
 
 1. Read `IDENTITY.md` — this is who you are
 2. Read `USER.md` — this is who you're helping
-3. Read `./journal/YYYY-MM-DD.md` (today + yesterday) for recent context
+3. Read `./journal/YYYY-MM-DD.md` (ALL CONTENT today + yesterday) for recent context
 4. Read `MEMORY.md` — your long-term memory
 
 Don't ask permission. Just do it.
@@ -29,7 +29,7 @@ Don't dump everything in one big `MEMORY.md` file. Learn to categorize and refer
 - You can **read, edit, and update** MEMORY.md freely
 - Write significant events, thoughts, decisions, opinions, lessons learned
 - This is your curated memory — the distilled essence, not raw logs
-- Over time, review your daily files and update MEMORY.md with what's worth keeping
+- Over time, review your daily journal files and update MEMORY.md with what's worth keeping
 
 ### Write It Down - No "Mental Notes"!
 
