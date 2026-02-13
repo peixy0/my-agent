@@ -55,7 +55,10 @@ class AppWithDependencies:
         self.tool_registry = ToolRegistry(
             tool_timeout=self.settings.tool_timeout,
         )
-        register_default_tools(self.tool_registry, self.executor, self.skill_loader)
+        self.messaging = create_messaging(self.settings, self.event_queue)
+        register_default_tools(
+            self.tool_registry, self.executor, self.skill_loader, self.messaging
+        )
 
         # LLM client
         self.llm_client = LLMFactory(self.settings).create(
@@ -66,9 +69,6 @@ class AppWithDependencies:
         # Agent
         self.agent = Agent(self.llm_client)
         self.prompt_builder = SystemPromptBuilder(self.settings, self.skill_loader)
-
-        # Messaging
-        self.messaging = create_messaging(self.settings, self.event_queue)
 
         # API Service
         self.api_service: ApiService = create_api_service(

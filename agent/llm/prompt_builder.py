@@ -20,12 +20,13 @@ class SystemPromptBuilder:
         self._settings = settings
         self._skill_loader = skill_loader
 
-    def build(self) -> str:
+    def build(self, session_key: str = "") -> str:
         """Build the full system prompt with current datetime and skills."""
         now = datetime.datetime.now().astimezone()
         current_datetime = now.strftime("%Y-%m-%d %H:%M:%S %Z%z")
         now.strftime("%Y-%m-%d")
         operating_system = platform.system()
+        session_info = "" if not session_key else f"**Session Key:** {session_key}"
 
         context_content = "(empty)"
         try:
@@ -46,6 +47,7 @@ class SystemPromptBuilder:
 **Timezone:** {now.tzinfo}
 **Host Environment:** {operating_system}
 **Directory:** `/workspace`
+{session_info}
 
 You are an autonomous agent acting as a personal assistant.
 

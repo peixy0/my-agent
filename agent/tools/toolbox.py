@@ -10,6 +10,7 @@ from typing import Any, cast
 import trafilatura
 from ddgs import DDGS
 
+from agent.core.messaging import Messaging
 from agent.tools.command_executor import CommandExecutor
 from agent.tools.skill_loader import SkillLoader
 from agent.tools.tool_registry import ToolRegistry
@@ -19,6 +20,7 @@ def register_default_tools(
     registry: ToolRegistry,
     executor: CommandExecutor,
     skill_loader: SkillLoader,
+    messaging: Messaging,
 ) -> None:
     """Declaratively register all default tools into the registry."""
 
@@ -107,6 +109,16 @@ def register_default_tools(
                 "instructions": skill.instructions,
             },
         }
+
+    async def report_intent(session_key: str, intent: str) -> dict[str, Any]:
+        """
+        Report intent to the user.
+
+        Use this to report intent before doing intense work and not being able to reply quickly, e.g multiple tool use, beginning of a task, internet access, coding, etc.
+        Can be called multiple times. ONLY use this tool during human conversations.
+        """
+        await messaging.send_message(session_key, intent)
+        return {"status": "success", "message": f"Reporting intent: {intent}"}
 
     registry.register(
         run_command,
@@ -230,5 +242,23 @@ def register_default_tools(
                 }
             },
             "required": ["skill_name"],
+        },
+    )
+
+    registry.register(
+        report_intent,
+        {
+            "type": "object",
+            "properties": {
+                "session_key": {
+                    "type": "string",
+                    "description": "The session key.",
+                },
+                "intent": {
+                    "type": "string",
+                    "description": "The intent to report.",
+                },
+            },
+            "required": ["session_key", "intent"],
         },
     )

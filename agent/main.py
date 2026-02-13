@@ -62,7 +62,7 @@ class Scheduler:
             )
             return
 
-        prompt = self.app.prompt_builder.build()
+        prompt = self.app.prompt_builder.build(session_key=event.session_key)
         self.app.agent.set_system_prompt(prompt)
 
         logger.info(f"Processing human input: {event.message[:100]}...")
