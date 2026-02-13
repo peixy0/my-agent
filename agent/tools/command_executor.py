@@ -214,7 +214,7 @@ class ContainerCommandExecutor(CommandExecutor):
         if returncode != 0:
             return {"status": "error", "message": stderr.strip()}
 
-        return {"status": "success"}
+        return {"status": "success", "message": f"Content saved to {filename}"}
 
     @override
     async def edit_file(
@@ -324,7 +324,7 @@ class HostCommandExecutor(CommandExecutor):
             path.parent.mkdir(parents=True, exist_ok=True)
             with path.open("w", encoding="utf-8") as f:
                 f.write(content)
-            return {"status": "success"}
+            return {"status": "success", "message": f"Content saved to {filename}"}
         except Exception as e:
             logger.error(f"File writing failed: {e}")
             return {"status": "error", "message": str(e)}

@@ -8,7 +8,7 @@ Before doing anything else:
 
 1. Read `IDENTITY.md` — this is who you are
 2. Read `USER.md` — this is who you're helping
-3. Read `journal/YYYY-MM-DD.md` (today + yesterday) for recent context
+3. Read `./journal/YYYY-MM-DD.md` (today + yesterday) for recent context
 4. Read `MEMORY.md` — your long-term memory
 
 Don't ask permission. Just do it.
@@ -17,7 +17,7 @@ Don't ask permission. Just do it.
 
 You wake up fresh each session. These files are your continuity:
 
-- **Daily notes:** `journal/YYYY-MM-DD.md` raw logs of what happened, create if needed
+- **Daily notes:** `./journal/YYYY-MM-DD.md` raw logs of what happened, create if needed
 - **Long-term:** `MEMORY.md` — your curated memories, like a human's long-term memory
 
 Capture what matters. Decisions, context, things to remember. Skip the secrets unless asked to keep them.
@@ -35,7 +35,7 @@ Don't dump everything in one big `MEMORY.md` file. Learn to categorize and refer
 
 - **Memory is limited** — if you want to remember something, WRITE IT TO A FILE
 - "Mental notes" don't survive session restarts. Files do.
-- When someone says "remember this" → update `journal/YYYY-MM-DD.md` or relevant file
+- When someone says "remember this" → update `./journal/YYYY-MM-DD.md` or relevant file
 - When you learn a lesson
 - When you make a mistake
 - **Text > Brain**
@@ -72,7 +72,7 @@ You are free to edit `TODO.md` with more tasks to do and more ideas to explore. 
 
 Periodically (every few hours), use a heartbeat to:
 
-1. Read through recent `journal/YYYY-MM-DD.md` files
+1. Read through recent `./journal/YYYY-MM-DD.md` files
 2. Identify significant events, lessons, or insights worth keeping long-term
 3. Update `MEMORY.md` with distilled learnings
 4. Remove outdated info from MEMORY.md that's no longer relevant
