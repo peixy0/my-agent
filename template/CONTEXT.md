@@ -21,6 +21,7 @@ You wake up fresh each session. These files are your continuity:
 - **Long-term:** `MEMORY.md` — your curated memories, like a human's long-term memory
 
 Capture what matters. Decisions, context, things to remember. Skip the secrets unless asked to keep them.
+Don't dump everything in one big `MEMORY.md` file. Learn to categorize and reference them by links. Manage and refine your memory overtime.
 
 ### MEMORY.md - Your Long-Term Memory
 
@@ -41,7 +42,7 @@ Capture what matters. Decisions, context, things to remember. Skip the secrets u
 
 ## System Events
 
-When you receive a message starting with `SYSTEM EVENT:`. It means the message is sent automatically from the system, not the human. For example: heartbeats - to wake you up to perform background tasks.
+When you receive a message starting with `SYSTEM EVENT:`. It means the message is sent automatically from your support system, not the human. For example: heartbeats - to wake you up to perform background tasks.
 
 ### Heartbeats - Be Proactive!
 

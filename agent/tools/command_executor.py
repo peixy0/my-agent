@@ -9,7 +9,6 @@ import asyncio
 import logging
 import shutil
 from abc import ABC, abstractmethod
-from pathlib import Path
 from typing import Any, Final, override
 
 logger = logging.getLogger(__name__)
@@ -285,77 +284,3 @@ class ContainerCommandExecutor(CommandExecutor):
                 }
 
         return await self.write_file(filename, content)
-
-
-async def ensure_container_running(
-    container_name: str,
-    runtime: str = "podman",
-    image: str = "sys-agent-workspace:latest",
-    workspace_path: str = "./workspace",
-) -> bool:
-    """
-    Ensure the workspace container is running.
-
-    Returns True if container is running (or was started), False on error.
-    """
-
-    # Check if container exists and is running
-    check_cmd = [runtime, "ps", "-q", "-f", f"name=^{container_name}$"]
-    process = await asyncio.create_subprocess_exec(
-        *check_cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    stdout, _ = await process.communicate()
-
-    if stdout.strip():
-        logger.info(f"Container '{container_name}' is already running")
-        return True
-
-    # Check if container exists but is stopped
-    check_all_cmd = [runtime, "ps", "-aq", "-f", f"name=^{container_name}$"]
-    process = await asyncio.create_subprocess_exec(
-        *check_all_cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    stdout, _ = await process.communicate()
-
-    if stdout.strip():
-        # Container exists but stopped, start it
-        logger.info(f"Starting stopped container '{container_name}'")
-        start_cmd = [runtime, "start", container_name]
-        process = await asyncio.create_subprocess_exec(*start_cmd)
-        _ = await process.wait()
-        return process.returncode == 0
-
-    # Container doesn't exist, create it
-    abs_workspace = Path(workspace_path).resolve()
-    abs_workspace.mkdir(parents=True, exist_ok=True)
-
-    logger.info(f"Creating container '{container_name}'")
-    run_cmd = [
-        runtime,
-        "run",
-        "-d",
-        "--name",
-        container_name,
-        "-v",
-        f"{abs_workspace}:/workspace",
-        "-i",  # Keep stdin open for bash
-        image,
-    ]
-
-    process = await asyncio.create_subprocess_exec(
-        *run_cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    _, stderr = await process.communicate()
-
-    if process.returncode != 0:
-        logger.error(f"Failed to create container: {stderr.decode()}")
-        return False
-
-    logger.info(f"Container '{container_name}' created and running")
-    return True

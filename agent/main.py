@@ -11,7 +11,6 @@ from typing import Final
 
 from agent.app import AppWithDependencies
 from agent.core.events import HeartbeatEvent, HumanInputEvent
-from agent.tools.command_executor import ensure_container_running
 
 logger = logging.getLogger(__name__)
 
@@ -34,13 +33,6 @@ class Scheduler:
         self.running = True
         self.heartbeat_task = None
         self.sessions: dict[str, list[dict[str, str]]] = {}
-
-    async def _ensure_container(self) -> bool:
-        return await ensure_container_running(
-            container_name=self.app.settings.container_name,
-            runtime=self.app.settings.container_runtime,
-            workspace_path=self.app.settings.workspace_dir,
-        )
 
     async def _schedule_heartbeat(self) -> None:
         logger.info(f"Sleeping for {self.app.settings.wake_interval_seconds} seconds")
@@ -79,10 +71,6 @@ class Scheduler:
         logger.info("Human input processing completed")
 
     async def run(self) -> None:
-        if not await self._ensure_container():
-            logger.error("Failed to start workspace container. Exiting.")
-            return
-
         logger.info("Scheduler starting...")
         logger.info(f"Wake interval: {self.app.settings.wake_interval_seconds} seconds")
 
@@ -91,11 +79,6 @@ class Scheduler:
 
         while self.running:
             event = await self.app.event_queue.get()
-
-            if not await self._ensure_container():
-                logger.error("Container not available, skipping event")
-                continue
-
             try:
                 if isinstance(event, HeartbeatEvent):
                     wake_time = datetime.now().astimezone().isoformat()
