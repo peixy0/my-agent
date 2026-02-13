@@ -98,6 +98,7 @@ class Scheduler:
             except Exception as e:
                 logger.error(f"Error during event processing: {e}", exc_info=True)
 
+            self.app.event_queue.task_done()
             # Re-schedule next heartbeat
             if self.heartbeat_task:
                 _ = self.heartbeat_task.cancel()

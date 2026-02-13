@@ -121,6 +121,7 @@ class MyMessaging(Messaging):
             event = await self.event_queue.get()
             if isinstance(event, SendMessageRequest):
                 await self._send(event.content)
+            self.event_queue.task_done()
 
     async def send_message(self, message: str) -> None:
         """Queue a message for sending."""
@@ -208,6 +209,7 @@ while self.running:
         await self._process_heartbeat()
     elif isinstance(event, HumanInputEvent):
         await self._process_human_input(event)
+    self.app.event_queue.task_done()
 ```
 
 ## Testing Strategy

@@ -71,6 +71,7 @@ class EventLogger:
                     try:
                         event = self._queue.get_nowait()
                         event_batch.append(event)
+                        self._queue.task_done()
                     except asyncio.QueueEmpty:
                         break
 
