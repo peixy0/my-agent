@@ -9,6 +9,7 @@ import asyncio
 import logging
 import shutil
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Any, Final, override
 
 logger = logging.getLogger(__name__)
@@ -227,13 +228,12 @@ class ContainerCommandExecutor(CommandExecutor):
             return read_result
 
         content = read_result["content"]
-        lines = content.splitlines(keepends=True)
+        content.splitlines(keepends=True)
 
         for edit in edits:
             search_block = edit["search"]
             replace_block = edit["replace"]
 
-            # 1. Try exact match first
             if search_block in content:
                 # Ensure it only occurs once to avoid ambiguity
                 if content.count(search_block) > 1:
@@ -244,43 +244,129 @@ class ContainerCommandExecutor(CommandExecutor):
                     }
                 content = content.replace(search_block, replace_block, 1)
                 continue
-
-            # 2. Try 'flexible' matching (ignoring minor whitespace/indentation differences)
-            search_lines = search_block.splitlines()
-            found_index = -1
-
-            # Simple sliding window search
-            for i in range(len(lines) - len(search_lines) + 1):
-                window = lines[i : i + len(search_lines)]
-                # Compare normalized versions (stripped of trailing whitespace)
-                if all(
-                    w.rstrip() == s.rstrip()
-                    for w, s in zip(window, search_lines, strict=True)
-                ):
-                    if found_index != -1:
-                        return {
-                            "status": "error",
-                            "message": "Search block is not unique (even with flexible matching).",
-                        }
-                    found_index = i
-
-            if found_index != -1:
-                # Replace lines at found_index
-                new_lines = (
-                    lines[:found_index]
-                    + [
-                        replace_block
-                        + ("\n" if not replace_block.endswith("\n") else "")
-                    ]
-                    + lines[found_index + len(search_lines) :]
-                )
-                content = "".join(new_lines)
             else:
-                # 3. If it fails, provide a helpful diff of why it failed
                 return {
                     "status": "error",
                     "message": f"Could not find exact match in {filename} for search block\n\n{search_block}\n\n"
-                    "Ensure your SEARCH block is a literal copy of the file content.",
+                    "Ensure your SEARCH block is a literal copy of the file content. The file is left unmodified.",
                 }
 
         return await self.write_file(filename, content)
+
+
+class HostCommandExecutor(CommandExecutor):
+    """
+    Execute commands on the host machine.
+    """
+
+    @override
+    async def execute(self, command: str) -> dict[str, Any]:
+        """
+        Execute a command and wait for it to complete.
+        """
+        try:
+            process = await asyncio.create_subprocess_shell(
+                command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await process.communicate()
+
+            return {
+                "status": "success",
+                "stdout": stdout.decode("utf-8", errors="replace"),
+                "stderr": stderr.decode("utf-8", errors="replace"),
+                "returncode": process.returncode or 0,
+            }
+        except Exception as e:
+            logger.error(f"Command execution failed: {e}")
+            return {"status": "error", "message": str(e)}
+
+    @override
+    async def read_file(
+        self, filename: str, start_line: int = 1, limit: int = 200
+    ) -> dict[str, Any]:
+        """
+        Read content from a file
+        """
+        try:
+            path = Path(filename)
+            if not path.exists():
+                return {"status": "error", "message": "File not found"}
+
+            with path.open("r", encoding="utf-8") as f:
+                lines = f.readlines()
+
+            total_lines = len(lines)
+            start = max(1, start_line)
+            end = start + limit - 1
+            content = "".join(lines[start - 1 : end])
+
+            return {
+                "status": "success",
+                "content": content,
+                "total_lines": total_lines,
+                "start_line": start,
+                "returned_lines": len(content.splitlines()),
+            }
+
+        except Exception as e:
+            logger.error(f"File reading failed: {e}")
+            return {"status": "error", "message": str(e)}
+
+    @override
+    async def write_file(self, filename: str, content: str) -> dict[str, Any]:
+        """
+        Write content to a file
+        """
+        try:
+            path = Path(filename)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("w", encoding="utf-8") as f:
+                f.write(content)
+            return {"status": "success"}
+        except Exception as e:
+            logger.error(f"File writing failed: {e}")
+            return {"status": "error", "message": str(e)}
+
+    @override
+    async def edit_file(
+        self, filename: str, edits: list[dict[str, str]]
+    ) -> dict[str, Any]:
+        """
+        Edit a file by replacing specific blocks of text.
+        """
+        try:
+            path = Path(filename)
+            if not path.exists():
+                return {"status": "error", "message": "File not found"}
+
+            with path.open("r", encoding="utf-8") as f:
+                content = f.read()
+
+            for edit in edits:
+                search_block = edit["search"]
+                replace_block = edit["replace"]
+
+                if search_block in content:
+                    # Ensure it only occurs once to avoid ambiguity
+                    if content.count(search_block) > 1:
+                        return {
+                            "status": "error",
+                            "message": f"Multiple occurrences of search block found in {filename}. "
+                            "Please include more surrounding context to make it unique.",
+                        }
+                    content = content.replace(search_block, replace_block, 1)
+                    continue
+                else:
+                    return {
+                        "status": "error",
+                        "message": f"Could not find exact match in {filename} for search block\n\n{search_block}\n\n"
+                        "Ensure your SEARCH block is a literal copy of the file content. The file is left unmodified",
+                    }
+
+            return await self.write_file(filename, content)
+
+        except Exception as e:
+            logger.error(f"File editing failed: {e}")
+            return {"status": "error", "message": str(e)}

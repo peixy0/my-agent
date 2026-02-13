@@ -61,35 +61,67 @@ class FeishuMessaging(Messaging):
             lark.Client.builder()
             .app_id(self._config.app_id)
             .app_secret(self._config.app_secret)
-            .log_level(lark.LogLevel.DEBUG)
             .build()
+        )
+
+    def _get_referenced_message(
+        self, message_id: str | None, prefix: str = "> "
+    ) -> str:
+        if not message_id:
+            return ""
+
+        request = lark.im.v1.GetMessageRequest.builder().message_id(message_id).build()
+        response = self.client.im.v1.message.get(request)
+        if not response.success():
+            logger.error(
+                f"Failed to get Feishu message: {response.code} - {response.msg}"
+            )
+            return ""
+        try:
+            content = ""
+            data = response.data
+            for item in data.items:
+                parent_content = self._get_referenced_message(
+                    item.parent_id, prefix + prefix
+                )
+                content_json = item.body.content
+                content_dict = json.loads(content_json)
+                lines = content_dict.get("text", "").splitlines()
+                content = f"{prefix}QUOTE:\n{prefix}\n" + "\n".join(
+                    [prefix + line for line in lines]
+                )
+                content = parent_content + content
+            if content:
+                content = content + "\n"
+            return content
+        except Exception as e:
+            logger.error(f"Failed to get Feishu message: {e}")
+            return ""
+
+    def _on_message(self, data: lark.im.v1.P2ImMessageReceiveV1) -> None:
+        content_json = data.event.message.content
+        content_dict = json.loads(content_json)
+        logger.info(f"Feishu event received: {content_json}")
+
+        if not (
+            data.event.sender
+            and data.event.sender.sender_id
+            and data.event.sender.sender_id.open_id
+        ):
+            return
+        sender_id = data.event.sender.sender_id.open_id
+        text = content_dict.get("text", "")
+        if not text:
+            return
+
+        text = self._get_referenced_message(data.event.message.parent_id) + text
+        asyncio.run_coroutine_threadsafe(
+            self.event_queue.put(HumanInputEvent(session_key=sender_id, message=text)),
+            asyncio.get_running_loop(),
         )
 
     async def run(self) -> None:
         """Start the WebSocket client to receive messages."""
-
-        def on_message(data: lark.im.v1.P2ImMessageReceiveV1) -> None:
-            content_json = data.event.message.content
-            content_dict = json.loads(content_json)
-            logger.info(f"Feishu event received: {content_json}")
-
-            if not (
-                data.event.sender
-                and data.event.sender.sender_id
-                and data.event.sender.sender_id.open_id
-            ):
-                return
-            sender_id = data.event.sender.sender_id.open_id
-            text = content_dict.get("text")
-            if not text:
-                return
-            if text:
-                asyncio.run_coroutine_threadsafe(
-                    self.event_queue.put(
-                        HumanInputEvent(session_key=sender_id, message=text)
-                    ),
-                    asyncio.get_running_loop(),
-                )
 
         # Initialize WebSocket Client for receiving messages
         ws_client = lark.ws.Client(
@@ -99,7 +131,7 @@ class FeishuMessaging(Messaging):
                 encrypt_key=self._config.encrypt_key,
                 verification_token=self._config.verification_token,
             )
-            .register_p2_im_message_receive_v1(on_message)
+            .register_p2_im_message_receive_v1(self._on_message)
             .build(),
             log_level=lark.LogLevel.DEBUG,
         )

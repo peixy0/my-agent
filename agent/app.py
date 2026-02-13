@@ -15,7 +15,7 @@ from agent.core.settings import Settings, get_settings
 from agent.llm.agent import Agent
 from agent.llm.factory import LLMFactory
 from agent.llm.prompt_builder import SystemPromptBuilder
-from agent.tools.command_executor import ContainerCommandExecutor
+from agent.tools.command_executor import ContainerCommandExecutor, HostCommandExecutor
 from agent.tools.skill_loader import SkillLoader
 from agent.tools.tool_registry import ToolRegistry
 from agent.tools.toolbox import register_default_tools
@@ -42,9 +42,13 @@ class AppWithDependencies:
         )
 
         # Tool infrastructure
-        self.executor = ContainerCommandExecutor(
-            container_name=self.settings.container_name,
-            runtime=self.settings.container_runtime,
+        self.executor = (
+            ContainerCommandExecutor(
+                container_name=self.settings.container_name,
+                runtime=self.settings.container_runtime,
+            )
+            if self.settings.container_runtime
+            else HostCommandExecutor()
         )
         self.skill_loader = SkillLoader(self.settings.skills_dir)
         self.tool_registry = ToolRegistry(
