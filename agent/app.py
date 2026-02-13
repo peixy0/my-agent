@@ -56,18 +56,19 @@ class AppWithDependencies:
             tool_timeout=self.settings.tool_timeout,
         )
         self.messaging = create_messaging(self.settings, self.event_queue)
-        register_default_tools(
-            self.tool_registry, self.executor, self.skill_loader, self.messaging
-        )
+        register_default_tools(self.tool_registry, self.executor, self.skill_loader)
 
         # LLM client
-        self.llm_client = LLMFactory(self.settings).create(
-            event_logger=self.event_logger,
-            tool_registry=self.tool_registry,
-        )
+        self.llm_client = LLMFactory(self.settings).create()
 
         # Agent
-        self.agent = Agent(self.llm_client)
+        self.agent = Agent(
+            self.llm_client,
+            self.settings.openai_model,
+            self.tool_registry,
+            self.messaging,
+            self.event_logger,
+        )
         self.prompt_builder = SystemPromptBuilder(self.settings, self.skill_loader)
 
         # API Service

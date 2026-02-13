@@ -45,11 +45,8 @@ class Scheduler:
 
         logger.info("Executing agent heartbeat cycle")
         messages = [{"role": "user", "content": "SYSTEM EVENT: Heartbeat"}]
-        response = await self.app.agent.run(messages)
+        response = await self.app.agent.run(None, messages)
         response = response.strip()
-        await self.app.event_logger.log_agent_response(
-            f"HEARTBEAT RESPONSE:\n\n{response}"
-        )
         if not response.endswith("NO_REPORT"):
             await self.app.messaging.notify(response)
         logger.info("Heartbeat cycle completed")
@@ -68,13 +65,9 @@ class Scheduler:
         logger.info(f"Processing human input: {event.message[:100]}...")
         conversation = self.sessions.get(event.session_key, [])
         conversation.append({"role": "user", "content": event.message})
-        response = await self.app.agent.run(conversation.copy())
-        await self.app.event_logger.log_agent_response(
-            f"HUMAN INPUT RESPONSE:\n\n{response}"
-        )
+        response = await self.app.agent.run(event.session_key, conversation.copy())
         conversation.append({"role": "assistant", "content": response})
         self.sessions[event.session_key] = conversation
-        await self.app.messaging.send_message(event.session_key, response)
         logger.info("Human input processing completed")
 
     async def run(self) -> None:

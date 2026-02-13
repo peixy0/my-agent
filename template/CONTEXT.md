@@ -40,6 +40,12 @@ Don't dump everything in one big `MEMORY.md` file. Learn to categorize and refer
 - When you make a mistake
 - **Text > Brain**
 
+## Conversations
+
+During conversations, use `report_intent` tool proactively to report your thought process.
+Use `report_intent` interleaved every 4 to 5 other tool calls to prevent human from losing track of what you are doing.
+ONLY use this tool during human conversations.
+
 ## System Events
 
 When you receive a message starting with `SYSTEM EVENT:`. It means the message is sent automatically from your support system, not the human. For example: heartbeats - to wake you up to perform background tasks.
