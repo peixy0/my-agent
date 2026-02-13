@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 class HumanInputRequest(BaseModel):
     """Request body for the human input endpoint."""
 
+    session_key: str
     message: str
 
 
@@ -90,8 +91,8 @@ def create_api(event_queue: asyncio.Queue) -> FastAPI:
         logger.info(f"Received human input: {request.message[:100]}...")
         await event_queue.put(
             HumanInputEvent(
-                conversation=[{"role": "user", "content": request.message}],
-                reply_fut=asyncio.Future(),
+                session_key=request.session_key,
+                message=request.message,
             )
         )
         return HumanInputResponse()

@@ -77,7 +77,7 @@ def register_default_tools(
         """
         return await executor.read_file(filename, start_line=start_line, limit=limit)
 
-    async def edit_file(filepath: str, edits: list[dict[str, str]]) -> dict[str, Any]:
+    async def edit_file(filename: str, edits: list[dict[str, str]]) -> dict[str, Any]:
         """
         Surgically edit a file by replacing specific blocks of text. Use this for precise code modifications.
 
@@ -86,7 +86,7 @@ def register_default_tools(
         2. Provide just enough context in SEARCH to be unique.
         3. If multiple changes are needed, provide multiple edit blocks.
         """
-        return await executor.edit_file(filepath, edits)
+        return await executor.edit_file(filename, edits)
 
     async def use_skill(skill_name: str) -> dict[str, Any]:
         """
@@ -192,7 +192,7 @@ def register_default_tools(
         {
             "type": "object",
             "properties": {
-                "filepath": {
+                "filename": {
                     "type": "string",
                     "description": "Path to the file (relative to /workspace or absolute).",
                 },
@@ -215,7 +215,7 @@ def register_default_tools(
                     },
                 },
             },
-            "required": ["filepath", "edits"],
+            "required": ["filename", "edits"],
         },
     )
 

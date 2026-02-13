@@ -25,19 +25,19 @@ class CommandExecutor(ABC):
 
     @abstractmethod
     async def read_file(
-        self, filepath: str, start_line: int = 1, limit: int = 200
+        self, filename: str, start_line: int = 1, limit: int = 200
     ) -> dict[str, Any]:
         """Read content from a file with pagination."""
         ...
 
     @abstractmethod
-    async def write_file(self, filepath: str, content: str) -> dict[str, Any]:
+    async def write_file(self, filename: str, content: str) -> dict[str, Any]:
         """Write content to a file."""
         ...
 
     @abstractmethod
     async def edit_file(
-        self, filepath: str, edits: list[dict[str, str]]
+        self, filename: str, edits: list[dict[str, str]]
     ) -> dict[str, Any]:
         """Edit content in a file by replacing original with replaced."""
         ...
@@ -140,9 +140,9 @@ class ContainerCommandExecutor(CommandExecutor):
             logger.error(f"Command execution failed: {e}")
             return {"status": "error", "message": str(e)}
 
-    async def _read_whole_file(self, filepath: str) -> dict[str, Any]:
+    async def _read_whole_file(self, filename: str) -> dict[str, Any]:
         """Read entire content from a file in the container."""
-        read_cmd = f"cat '{filepath}'"
+        read_cmd = f"cat '{filename}'"
         stdout, stderr, returncode = await self._exec_in_container(read_cmd)
 
         if returncode != 0:
@@ -157,11 +157,11 @@ class ContainerCommandExecutor(CommandExecutor):
 
     @override
     async def read_file(
-        self, filepath: str, start_line: int = 1, limit: int = 200
+        self, filename: str, start_line: int = 1, limit: int = 200
     ) -> dict[str, Any]:
         """Read content from a file in the container with pagination."""
         # Get total lines first
-        total_cmd = f"sed -n '$=' '{filepath}'"
+        total_cmd = f"sed -n '$=' '{filename}'"
         stdout, stderr, returncode = await self._exec_in_container(total_cmd)
 
         if returncode != 0:
@@ -176,7 +176,7 @@ class ContainerCommandExecutor(CommandExecutor):
         # sed -n 'start,end p'
         start = max(1, start_line)
         end = start + limit - 1
-        read_cmd = f"sed -n '{start},{end}p' '{filepath}'"
+        read_cmd = f"sed -n '{start},{end}p' '{filename}'"
 
         stdout, stderr, returncode = await self._exec_in_container(read_cmd)
 
@@ -195,17 +195,17 @@ class ContainerCommandExecutor(CommandExecutor):
         }
 
     @override
-    async def write_file(self, filepath: str, content: str) -> dict[str, Any]:
+    async def write_file(self, filename: str, content: str) -> dict[str, Any]:
         """Write content to a file in the container."""
         # Ensure parent directory exists
-        mkdir_cmd = f"mkdir -p \"$(dirname '{filepath}')\""
+        mkdir_cmd = f"mkdir -p \"$(dirname '{filename}')\""
         _ = await self._exec_in_container(mkdir_cmd)
 
         # Use base64 encoding to safely transfer content via stdin
         import base64
 
         encoded_bytes = base64.b64encode(content.encode("utf-8"))
-        command = f"base64 -d > '{filepath}'"
+        command = f"base64 -d > '{filename}'"
 
         _, stderr, returncode = await self._exec_in_container(
             command, input_data=encoded_bytes
@@ -218,12 +218,12 @@ class ContainerCommandExecutor(CommandExecutor):
 
     @override
     async def edit_file(
-        self, filepath: str, edits: list[dict[str, str]]
+        self, filename: str, edits: list[dict[str, str]]
     ) -> dict[str, Any]:
         """
         Edit a file by replacing specific blocks of text.
         """
-        read_result = await self._read_whole_file(filepath)
+        read_result = await self._read_whole_file(filename)
         if read_result["status"] != "success":
             return read_result
 
@@ -240,7 +240,7 @@ class ContainerCommandExecutor(CommandExecutor):
                 if content.count(search_block) > 1:
                     return {
                         "status": "error",
-                        "message": f"Multiple occurrences of search block found in {filepath}. "
+                        "message": f"Multiple occurrences of search block found in {filename}. "
                         "Please include more surrounding context to make it unique.",
                     }
                 content = content.replace(search_block, replace_block, 1)
@@ -280,11 +280,11 @@ class ContainerCommandExecutor(CommandExecutor):
                 # 3. If it fails, provide a helpful diff of why it failed
                 return {
                     "status": "error",
-                    "message": f"Could not find exact match in {filepath} for search block\n\n{search_block}\n\n"
+                    "message": f"Could not find exact match in {filename} for search block\n\n{search_block}\n\n"
                     "Ensure your SEARCH block is a literal copy of the file content.",
                 }
 
-        return await self.write_file(filepath, content)
+        return await self.write_file(filename, content)
 
 
 async def ensure_container_running(

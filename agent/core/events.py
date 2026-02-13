@@ -1,4 +1,3 @@
-import asyncio
 from dataclasses import dataclass
 
 
@@ -9,5 +8,5 @@ class HeartbeatEvent:
 
 @dataclass
 class HumanInputEvent:
-    conversation: list[dict[str, str]]
-    reply_fut: asyncio.Future[str]
+    session_key: str
+    message: str

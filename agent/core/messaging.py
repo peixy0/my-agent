@@ -21,12 +21,18 @@ class Messaging(ABC):
     @abstractmethod
     async def notify(self, message: str) -> None: ...
 
+    @abstractmethod
+    async def send_message(self, session_key: str, message: str) -> None: ...
+
 
 class NullMessaging(Messaging):
     async def run(self) -> None:
         pass
 
     async def notify(self, message: str) -> None:
+        pass
+
+    async def send_message(self, session_key: str, message: str) -> None:
         pass
 
 
@@ -51,9 +57,6 @@ class FeishuMessaging(Messaging):
     ):
         self._config = config
         self.event_queue = event_queue
-        self.message_queue: asyncio.Queue[FeishuMessageEvent] = asyncio.Queue()
-        self.conversations = {}
-        # Initialize Lark Client for API requests (sending messages)
         self.client = (
             lark.Client.builder()
             .app_id(self._config.app_id)
@@ -82,8 +85,8 @@ class FeishuMessaging(Messaging):
                 return
             if text:
                 asyncio.run_coroutine_threadsafe(
-                    self.message_queue.put(
-                        FeishuMessageEvent(content=text, sender_id=sender_id)
+                    self.event_queue.put(
+                        HumanInputEvent(session_key=sender_id, message=text)
                     ),
                     asyncio.get_running_loop(),
                 )
@@ -103,40 +106,19 @@ class FeishuMessaging(Messaging):
 
         await asyncio.to_thread(ws_client.start)
         logger.info("Feishu client started")
-        await self._event_loop()
 
     async def notify(self, message: str) -> None:
         """Notify method for sending messages, can be used by the agent to send proactive messages."""
-        await self._send_message(self._config.notify_channel_id, message)
+        await self.send_message(self._config.notify_channel_id, message)
 
-    async def _event_loop(self) -> None:
-        """Process incoming messages and manage conversations."""
-        while True:
-            message_event = await self.message_queue.get()
-            if message_event.content == "/new":
-                self.conversations[message_event.sender_id] = []
-                continue
-            conversation = self.conversations.get(message_event.sender_id, [])
-            conversation.append({"role": "user", "content": message_event.content})
-            self.conversations[message_event.sender_id] = conversation.copy()
-            fut = asyncio.Future()
-            await self.event_queue.put(
-                HumanInputEvent(conversation=conversation, reply_fut=fut)
-            )
-            reply = await fut
-            self.conversations[message_event.sender_id].append(
-                {"role": "assistant", "content": reply}
-            )
-            await self._send_message(message_event.sender_id, reply)
-
-    async def _send_message(self, sender_id: str, message: str) -> None:
+    async def send_message(self, session_key: str, message: str) -> None:
         """Send a message to Feishu using the last known sender."""
         request = (
             lark.im.v1.CreateMessageRequest.builder()
             .receive_id_type("open_id")
             .request_body(
                 lark.im.v1.CreateMessageRequestBody.builder()
-                .receive_id(sender_id)
+                .receive_id(session_key)
                 .msg_type("text")
                 .content(json.dumps({"text": message}))
                 .build()

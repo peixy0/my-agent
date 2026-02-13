@@ -33,7 +33,7 @@ class Scheduler:
         self.app = app
         self.running = True
         self.heartbeat_task = None
-        self.conversation = []
+        self.sessions: dict[str, list[dict[str, str]]] = {}
 
     async def _ensure_container(self) -> bool:
         return await ensure_container_running(
@@ -66,14 +66,16 @@ class Scheduler:
         prompt = self.app.prompt_builder.build()
         self.app.agent.set_system_prompt(prompt)
 
-        logger.info(
-            f"Processing human input: {event.conversation[-1]['content'][:100]}..."
-        )
-        response = await self.app.agent.run(event.conversation)
+        logger.info(f"Processing human input: {event.message[:100]}...")
+        conversation = self.sessions.get(event.session_key, [])
+        conversation.append({"role": "user", "content": event.message})
+        response = await self.app.agent.run(conversation.copy())
         await self.app.event_logger.log_agent_response(
             f"HUMAN INPUT RESPONSE:\n\n{response}"
         )
-        event.reply_fut.set_result(response)
+        conversation.append({"role": "assistant", "content": response})
+        self.sessions[event.session_key] = conversation
+        await self.app.messaging.send_message(event.session_key, response)
         logger.info("Human input processing completed")
 
     async def run(self) -> None:

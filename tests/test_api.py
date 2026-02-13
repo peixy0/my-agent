@@ -33,7 +33,7 @@ class TestAPI:
         """Test POST /api/bot queues a HumanInputEvent."""
         response = client.post(
             "/api/bot",
-            json={"message": "Hello from test"},
+            json={"message": "Hello from test", "session_key": "test-session"},
         )
         assert response.status_code == 200
         assert response.json() == {"status": "queued"}
@@ -42,8 +42,7 @@ class TestAPI:
         assert not event_queue.empty()
         event = event_queue.get_nowait()
         assert isinstance(event, HumanInputEvent)
-        assert len(event.conversation) == 1
-        assert event.conversation[-1]["content"] == "Hello from test"
+        assert event.message == "Hello from test"
 
     def test_submit_input_validation_error(self, client):
         """Test POST /api/bot with invalid body returns 422."""
@@ -54,7 +53,7 @@ class TestAPI:
         """Test POST /api/bot with empty message still queues."""
         response = client.post(
             "/api/bot",
-            json={"message": ""},
+            json={"message": "", "session_key": "empty-message-session"},
         )
         assert response.status_code == 200
         assert not event_queue.empty()

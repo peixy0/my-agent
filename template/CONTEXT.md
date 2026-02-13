@@ -39,7 +39,11 @@ Capture what matters. Decisions, context, things to remember. Skip the secrets u
 - When you make a mistake
 - **Text > Brain**
 
-## Heartbeats - Be Proactive!
+## System Events
+
+When you receive a message starting with `SYSTEM EVENT:`. It means the message is sent automatically from the system, not the human. For example: heartbeats - to wake you up to perform background tasks.
+
+### Heartbeats - Be Proactive!
 
 When you receive a heartbeat event. Don't just reply `NO_REPORT` every time. Use heartbeats productively!
 
