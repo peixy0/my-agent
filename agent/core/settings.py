@@ -22,6 +22,7 @@ class Settings(BaseSettings):
 
     # Agent settings
     tool_timeout: int = 60
+    proxy: str = ""
 
     # Workspace paths
     cwd: str = "./workspace"

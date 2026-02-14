@@ -56,7 +56,9 @@ class AppWithDependencies:
             tool_timeout=self.settings.tool_timeout,
         )
         self.messaging = create_messaging(self.settings, self.event_queue, self.runtime)
-        register_default_tools(self.tool_registry, self.runtime, self.skill_loader)
+        register_default_tools(
+            self.tool_registry, self.runtime, self.skill_loader, self.settings
+        )
 
         # LLM client
         self.llm_client = LLMFactory(self.settings).create()

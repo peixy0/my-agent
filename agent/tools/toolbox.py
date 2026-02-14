@@ -11,12 +11,16 @@ import trafilatura
 from ddgs import DDGS
 
 from agent.core.runtime import Runtime
+from agent.core.settings import Settings
 from agent.tools.skill_loader import SkillLoader
 from agent.tools.tool_registry import ToolRegistry
 
 
 def register_default_tools(
-    registry: ToolRegistry, runtime: Runtime, skill_loader: SkillLoader
+    registry: ToolRegistry,
+    runtime: Runtime,
+    skill_loader: SkillLoader,
+    settings: Settings,
 ) -> None:
     """Declaratively register all default tools into the registry."""
 
@@ -36,8 +40,11 @@ def register_default_tools(
         Returns a list of search results with titles, URLs, and snippets.
         """
         try:
-            with cast(Any, DDGS()) as ddgs:
-                results = [r for r in ddgs.text(query, max_results=7, timeout=60)]
+            proxy = None
+            if settings.proxy:
+                proxy = settings.proxy
+            with cast(Any, DDGS(proxy=proxy, timeout=60)) as ddgs:  # pyright: ignore[reportCallIssue]
+                results = [r for r in ddgs.text(query, max_results=7)]
                 return {"status": "success", "results": results}
         except Exception as e:
             return {"status": "error", "message": str(e)}
