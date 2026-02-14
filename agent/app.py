@@ -12,7 +12,7 @@ import os
 from agent.api.server import ApiService, create_api_service
 from agent.core.event_logger import EventLogger
 from agent.core.messaging import create_messaging
-from agent.core.settings import Settings, get_settings
+from agent.core.settings import Settings
 from agent.llm.agent import Agent
 from agent.llm.factory import LLMFactory
 from agent.llm.prompt_builder import SystemPromptBuilder
@@ -32,8 +32,8 @@ class AppWithDependencies:
     Call run() to start dependent background tasks (event logger, messaging).
     """
 
-    def __init__(self, settings: Settings | None = None):
-        self.settings = settings or get_settings()
+    def __init__(self, settings: Settings):
+        self.settings = settings
         self.event_queue: asyncio.Queue = asyncio.Queue()
 
         # Event logger
@@ -62,6 +62,7 @@ class AppWithDependencies:
         self.llm_client = LLMFactory(self.settings).create()
 
         # Agent
+        self.model_name = self.settings.openai_model
         self.agent = Agent(
             self.llm_client,
             self.settings.openai_model,
