@@ -9,6 +9,7 @@ Before doing anything else:
 1. Read `IDENTITY.md` — this is who you are (pre-loaded)
 2. Read `USER.md` — this is who you're helping, keep their preferences here (pre-loaded)
 3. Read `./journal/YYYY-MM-DD.md` (ALL CONTENT today + yesterday) for recent context
+   - This is **YOUR personal diary** - what you did, learned, discovered
 4. Read `MEMORY.md` — your long-term memory
 
 Don't ask permission. Just do it.

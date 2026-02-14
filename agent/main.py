@@ -35,6 +35,7 @@ class Scheduler:
         self.running = True
         self.heartbeat_task = None
         self.sessions: dict[str, list[dict[str, str]]] = {}
+        self.messages: dict[str, set[str]] = {}
 
     async def _schedule_heartbeat(self) -> None:
         logger.info(f"Sleeping for {self.app.settings.wake_interval_seconds} seconds")
@@ -58,20 +59,29 @@ class Scheduler:
 
     async def _process_human_input(self, event: HumanInputEvent) -> None:
         if event.message == "/new":
-            self.sessions[event.session_key] = []
+            self.sessions[event.session_id] = []
+            self.messages[event.session_id] = set()
             await self.app.messaging.send_message(
-                event.session_key, "New session started"
+                event.session_id, "New session started"
             )
             return
 
-        prompt = self.app.prompt_builder.build(session_key=event.session_key)
+        messages = self.messages.get(event.session_id, set())
+        if event.message_id in messages:
+            logger.debug(f"Ignoring duplicated message {event.message_id}")
+            return
+        messages.add(event.message_id)
+        self.messages[event.session_id] = messages
+
+        conversation = self.sessions.get(event.session_id, [])
+        conversation.append({"role": "user", "content": event.message})
+        logger.info(f"Processing human input: {event.message[:100]}...")
+
+        prompt = self.app.prompt_builder.build(session_id=event.session_id)
         self.app.agent.set_system_prompt(prompt)
 
-        logger.info(f"Processing human input: {event.message[:100]}...")
-        conversation = self.sessions.get(event.session_key, [])
-        conversation.append({"role": "user", "content": event.message})
         orchestrator = HumanInputOrchestrator(
-            event.session_key,
+            event.session_id,
             self.app.model_name,
             self.app.tool_registry,
             self.app.messaging,
@@ -79,7 +89,7 @@ class Scheduler:
         )
         response = await self.app.agent.run(conversation.copy(), orchestrator)
         conversation.append({"role": "assistant", "content": response})
-        self.sessions[event.session_key] = conversation
+        self.sessions[event.session_id] = conversation
         logger.info("Human input processing completed")
 
     async def run(self) -> None:

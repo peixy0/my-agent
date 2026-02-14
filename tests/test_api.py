@@ -33,7 +33,11 @@ class TestAPI:
         """Test POST /api/bot queues a HumanInputEvent."""
         response = client.post(
             "/api/bot",
-            json={"message": "Hello from test", "session_key": "test-session"},
+            json={
+                "message": "Hello from test",
+                "session_id": "test-session",
+                "message_id": "test-message-id",
+            },
         )
         assert response.status_code == 200
         assert response.json() == {"status": "queued"}
@@ -53,7 +57,11 @@ class TestAPI:
         """Test POST /api/bot with empty message still queues."""
         response = client.post(
             "/api/bot",
-            json={"message": "", "session_key": "empty-message-session"},
+            json={
+                "message": "",
+                "session_id": "empty-message-session",
+                "message_id": "empty-message-id",
+            },
         )
         assert response.status_code == 200
         assert not event_queue.empty()

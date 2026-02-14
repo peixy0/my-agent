@@ -121,7 +121,7 @@ class HeartbeatOrchestrator(Orchestrator):
             reply: list[dict[str, Any]] = []
             for tool_result in tool_results:
                 await self.event_logger.log_tool_use(
-                    tool_result.tool_id, tool_result.args, tool_result.result
+                    tool_result.tool_name, tool_result.args, tool_result.result
                 )
                 reply.append(
                     {
@@ -147,14 +147,14 @@ class HeartbeatOrchestrator(Orchestrator):
 class HumanInputOrchestrator(Orchestrator):
     def __init__(
         self,
-        session_key: str,
+        session_id: str,
         model: str,
         tool_registry: ToolRegistry,
         messaging: Messaging,
         event_logger: EventLogger,
     ):
         super().__init__(model, tool_registry)
-        self.session_key = session_key
+        self.session_id = session_id
         self.messaging = messaging
         self.event_logger = event_logger
 
@@ -162,7 +162,7 @@ class HumanInputOrchestrator(Orchestrator):
     async def process(self, message: Any, finish_reason: str) -> list[dict[str, str]]:
         if message.tool_calls:
             if message.content:
-                await self.messaging.send_message(self.session_key, message.content)
+                await self.messaging.send_message(self.session_id, message.content)
             tool_results = await asyncio.gather(
                 *[self._handle_tool_call(tool_call) for tool_call in message.tool_calls]
             )
@@ -170,7 +170,7 @@ class HumanInputOrchestrator(Orchestrator):
             reply: list[dict[str, Any]] = []
             for tool_result in tool_results:
                 await self.event_logger.log_tool_use(
-                    tool_result.tool_id, tool_result.args, tool_result.result
+                    tool_result.tool_name, tool_result.args, tool_result.result
                 )
                 reply.append(
                     {
@@ -188,7 +188,7 @@ class HumanInputOrchestrator(Orchestrator):
             f"Human Input Response:\n\n{message.content}"
         )
         content = message.content.strip()
-        await self.messaging.send_message(self.session_key, content)
+        await self.messaging.send_message(self.session_id, content)
         return []
 
 

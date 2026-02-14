@@ -22,7 +22,7 @@ class Messaging(ABC):
     async def notify(self, message: str) -> None: ...
 
     @abstractmethod
-    async def send_message(self, session_key: str, message: str) -> None: ...
+    async def send_message(self, session_id: str, message: str) -> None: ...
 
 
 class NullMessaging(Messaging):
@@ -32,7 +32,7 @@ class NullMessaging(Messaging):
     async def notify(self, message: str) -> None:
         pass
 
-    async def send_message(self, session_key: str, message: str) -> None:
+    async def send_message(self, session_id: str, message: str) -> None:
         pass
 
 
@@ -110,14 +110,19 @@ class FeishuMessaging(Messaging):
             and data.event.sender.sender_id.open_id
         ):
             return
-        sender_id = data.event.sender.sender_id.open_id
         text = content_dict.get("text", "")
         if not text:
             return
 
+        sender_id = data.event.sender.sender_id.open_id
+        message_id = data.event.message.message_id
         text = self._get_referenced_message(data.event.message.parent_id) + text
         asyncio.run_coroutine_threadsafe(
-            self.event_queue.put(HumanInputEvent(session_key=sender_id, message=text)),
+            self.event_queue.put(
+                HumanInputEvent(
+                    session_id=sender_id, message_id=message_id, message=text
+                )
+            ),
             asyncio.get_running_loop(),
         )
 
@@ -144,14 +149,14 @@ class FeishuMessaging(Messaging):
         """Notify method for sending messages, can be used by the agent to send proactive messages."""
         await self.send_message(self._config.notify_channel_id, message)
 
-    async def send_message(self, session_key: str, message: str) -> None:
+    async def send_message(self, session_id: str, message: str) -> None:
         """Send a message to Feishu using the last known sender."""
         request = (
             lark.im.v1.CreateMessageRequest.builder()
             .receive_id_type("open_id")
             .request_body(
                 lark.im.v1.CreateMessageRequestBody.builder()
-                .receive_id(session_key)
+                .receive_id(session_id)
                 .msg_type("text")
                 .content(json.dumps({"text": message}))
                 .build()

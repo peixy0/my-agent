@@ -20,13 +20,13 @@ class SystemPromptBuilder:
         self._settings = settings
         self._skill_loader = skill_loader
 
-    def build(self, session_key: str = "") -> str:
+    def build(self, session_id: str = "") -> str:
         """Build the full system prompt with current datetime and skills."""
         now = datetime.datetime.now().astimezone()
         current_datetime = now.strftime("%Y-%m-%d %H:%M:%S %Z%z")
         now.strftime("%Y-%m-%d")
         operating_system = platform.system()
-        session_info = "" if not session_key else f"**Session Key:** {session_key}"
+        session_info = "" if not session_id else f"**Session Key:** {session_id}"
 
         identity_context = "# IDENTITY.md\n\n(empty)"
         user_context = "# USER.md\n\n(empty)"
