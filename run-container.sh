@@ -48,6 +48,7 @@ echo "Creating new container '$CONTAINER_NAME'..."
 $CONTAINER_RUNTIME run -d \
     --name "$CONTAINER_NAME" \
     -v "${WORKSPACE_DIR}:/workspace" \
+    --network=host \
     -i \
     "$IMAGE_NAME"
 
