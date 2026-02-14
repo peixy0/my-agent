@@ -1,11 +1,12 @@
 """
-Command executor module providing abstraction for executing commands.
+Command runtime module providing abstraction for executing commands.
 
 Implements the Strategy pattern for command execution, enabling
 the agent to execute commands in different environments (container, local).
 """
 
 import asyncio
+import base64
 import logging
 import shutil
 from abc import ABC, abstractmethod
@@ -15,12 +16,17 @@ from typing import Any, Final, override
 logger = logging.getLogger(__name__)
 
 
-class CommandExecutor(ABC):
+class Runtime(ABC):
     """Abstract base class for command execution (Strategy pattern)."""
 
     @abstractmethod
     async def execute(self, command: str) -> dict[str, Any]:
         """Execute a command and return the result."""
+        ...
+
+    @abstractmethod
+    async def read_file_internal(self, filename: str) -> bytes:
+        """Read content from a file in the container."""
         ...
 
     @abstractmethod
@@ -43,11 +49,11 @@ class CommandExecutor(ABC):
         ...
 
 
-class ContainerCommandExecutor(CommandExecutor):
+class ContainerRuntime(Runtime):
     """
     Executes commands inside a container.
 
-    This executor delegates all operations to a running container,
+    This runtime delegates all operations to a running container,
     allowing the agent to work in an isolated workspace environment.
     """
 
@@ -140,20 +146,18 @@ class ContainerCommandExecutor(CommandExecutor):
             logger.error(f"Command execution failed: {e}")
             return {"status": "error", "message": str(e)}
 
-    async def _read_whole_file(self, filename: str) -> dict[str, Any]:
-        """Read entire content from a file in the container."""
-        read_cmd = f"cat '{filename}'"
-        stdout, stderr, returncode = await self._exec_in_container(read_cmd)
-
-        if returncode != 0:
-            return {"status": "error", "message": stderr.strip()}
-
-        content = stdout
-
-        return {
-            "status": "success",
-            "content": content,
-        }
+    @override
+    async def read_file_internal(self, filename: str) -> bytes:
+        """Read entire content from a file in the container from host by base64 and convert."""
+        try:
+            base64_cmd = f"base64 '{filename}'"
+            stdout, stderr, returncode = await self._exec_in_container(base64_cmd)
+            if returncode != 0:
+                raise Exception(stderr.strip())
+            return base64.b64decode(stdout)
+        except Exception as e:
+            logger.error(f"Failed to read file {filename}: {e}")
+            raise
 
     @override
     async def read_file(
@@ -223,11 +227,10 @@ class ContainerCommandExecutor(CommandExecutor):
         """
         Edit a file by replacing specific blocks of text.
         """
-        read_result = await self._read_whole_file(filename)
-        if read_result["status"] != "success":
-            return read_result
-
-        content = read_result["content"]
+        content_bytes = await self.read_file_internal(filename)
+        if content_bytes is None:
+            return {"status": "error", "message": "Failed to read file"}
+        content = content_bytes.decode("utf-8", errors="replace")
         content.splitlines(keepends=True)
 
         for edit in edits:
@@ -254,7 +257,7 @@ class ContainerCommandExecutor(CommandExecutor):
         return await self.write_file(filename, content)
 
 
-class HostCommandExecutor(CommandExecutor):
+class HostRuntime(Runtime):
     """
     Execute commands on the host machine.
     """
@@ -281,6 +284,16 @@ class HostCommandExecutor(CommandExecutor):
         except Exception as e:
             logger.error(f"Command execution failed: {e}")
             return {"status": "error", "message": str(e)}
+
+    @override
+    async def read_file_internal(self, filename: str) -> bytes:
+        """Read entire content from a file in the host"""
+        try:
+            with Path(filename).open("rb") as f:
+                return f.read()
+        except Exception as e:
+            logger.error(f"Failed to read file {filename}: {e}")
+            raise
 
     @override
     async def read_file(

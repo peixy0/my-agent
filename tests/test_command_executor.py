@@ -1,24 +1,24 @@
-"""Tests for CommandExecutor implementations."""
+"""Tests for Runtime implementations."""
 
 import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from agent.tools.command_executor import (
-    CommandExecutor,
-    ContainerCommandExecutor,
+from agent.core.runtime import (
+    ContainerRuntime,
+    Runtime,
 )
 
 
-class TestContainerCommandExecutor:
-    """Tests for ContainerCommandExecutor."""
+class TestContainerRuntime:
+    """Tests for ContainerRuntime."""
 
     def test_implements_protocol(self):
-        """Verify ContainerCommandExecutor satisfies CommandExecutor protocol."""
+        """Verify ContainerRuntime satisfies Runtime protocol."""
         with patch("shutil.which", return_value="/usr/bin/podman"):
-            executor = ContainerCommandExecutor("test-container")
-            assert isinstance(executor, CommandExecutor)
+            runtime = ContainerRuntime("test-container")
+            assert isinstance(runtime, Runtime)
 
     def test_init_validates_runtime(self):
         """Verify runtime validation on init."""
@@ -26,20 +26,20 @@ class TestContainerCommandExecutor:
             patch("shutil.which", return_value=None),
             pytest.raises(RuntimeError, match="not found in PATH"),
         ):
-            ContainerCommandExecutor("test-container", runtime="nonexistent")
+            ContainerRuntime("test-container", runtime="nonexistent")
 
     @pytest.mark.asyncio
     async def test_execute_success(self):
         """Test successful command execution."""
         with patch("shutil.which", return_value="/usr/bin/podman"):
-            executor = ContainerCommandExecutor("test-container")
+            runtime = ContainerRuntime("test-container")
 
         mock_process = AsyncMock()
         mock_process.communicate.return_value = (b"output\n", b"")
         mock_process.returncode = 0
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_process):
-            result = await executor.execute("ls -la")
+            result = await runtime.execute("ls -la")
 
         assert result["status"] == "success"
         assert result["stdout"] == "output\n"
@@ -48,14 +48,14 @@ class TestContainerCommandExecutor:
     async def test_execute_failure(self):
         """Test command execution failure."""
         with patch("shutil.which", return_value="/usr/bin/podman"):
-            executor = ContainerCommandExecutor("test-container")
+            runtime = ContainerRuntime("test-container")
 
         mock_process = AsyncMock()
         mock_process.communicate.return_value = (b"", b"error message")
         mock_process.returncode = 1
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_process):
-            result = await executor.execute("bad-command")
+            result = await runtime.execute("bad-command")
 
         assert result["status"] == "error"
         assert result["returncode"] == 1
@@ -65,7 +65,7 @@ class TestContainerCommandExecutor:
     async def test_read_file_success(self):
         """Test successful file read with pagination metadata."""
         with patch("shutil.which", return_value="/usr/bin/podman"):
-            executor = ContainerCommandExecutor("test-container")
+            runtime = ContainerRuntime("test-container")
 
         # Mock first call (wc -l) and second call (sed)
         mock_process_wc = AsyncMock()
@@ -80,7 +80,7 @@ class TestContainerCommandExecutor:
             "asyncio.create_subprocess_exec",
             side_effect=[mock_process_wc, mock_process_sed],
         ):
-            result = await executor.read_file("test.txt", start_line=1, limit=2)
+            result = await runtime.read_file("test.txt", start_line=1, limit=2)
 
         assert result["status"] == "success"
         assert result["content"] == "line 1\nline 2\n"
@@ -92,7 +92,7 @@ class TestContainerCommandExecutor:
     async def test_write_file_success(self):
         """Test successful file write."""
         with patch("shutil.which", return_value="/usr/bin/podman"):
-            executor = ContainerCommandExecutor("test-container")
+            runtime = ContainerRuntime("test-container")
 
         mock_process = AsyncMock()
         mock_process.communicate.return_value = (b"", b"")
@@ -101,7 +101,7 @@ class TestContainerCommandExecutor:
         with patch(
             "asyncio.create_subprocess_exec", return_value=mock_process
         ) as mock_create:
-            result = await executor.write_file("test.txt", "content")
+            result = await runtime.write_file("test.txt", "content")
 
         assert result["status"] == "success"
         assert mock_create.call_count == 2
@@ -115,7 +115,7 @@ class TestContainerCommandExecutor:
     async def test_edit_file_not_found(self):
         """Test edit_file when original content not found."""
         with patch("shutil.which", return_value="/usr/bin/podman"):
-            executor = ContainerCommandExecutor("test-container")
+            runtime = ContainerRuntime("test-container")
 
         # Mock read (wc then sed) returning different content
         mock_process_wc = AsyncMock()
@@ -130,7 +130,7 @@ class TestContainerCommandExecutor:
             "asyncio.create_subprocess_exec",
             side_effect=[mock_process_wc, mock_process_sed],
         ):
-            result = await executor.edit_file(
+            result = await runtime.edit_file(
                 "test.txt", [{"search": "original", "replace": "replaced"}]
             )
 

@@ -34,17 +34,10 @@ class ToolRegistry:
     def handlers(self) -> dict[str, Callable[..., Awaitable[Any]]]:
         return dict(self._handlers)
 
-    def register(
-        self,
-        func: Callable[..., Awaitable[Any]],
-        schema: dict[str, Any],
-        *,
-        name: str | None = None,
-        description: str | None = None,
-    ) -> None:
-        """Register a tool with its parameter schema."""
-        tool_name = name or func.__name__
-        tool_description = description or (func.__doc__ or "").strip()
+    def wrap_tool(
+        self, func: Callable[..., Awaitable[Any]], tool_name: str
+    ) -> Callable[..., Awaitable[Any]]:
+        """Wrap a tool with timeout and error handling."""
 
         async def wrapped_tool(**kwargs: Any) -> Any:
             try:
@@ -60,9 +53,23 @@ class ToolRegistry:
             except Exception as e:
                 return {"status": "error", "message": str(e)}
 
+        return wrapped_tool
+
+    def register(
+        self,
+        func: Callable[..., Awaitable[Any]],
+        schema: dict[str, Any],
+        *,
+        name: str | None = None,
+        description: str | None = None,
+    ) -> None:
+        """Register a tool with its parameter schema."""
+        tool_name = name or func.__name__
+        tool_description = description or (func.__doc__ or "").strip()
+
         self._schemas[tool_name] = {
             "name": tool_name,
             "description": tool_description,
             "parameters": schema,
         }
-        self._handlers[tool_name] = wrapped_tool
+        self._handlers[tool_name] = self.wrap_tool(func, tool_name)

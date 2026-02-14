@@ -82,13 +82,13 @@ class Scheduler:
 
         orchestrator = HumanInputOrchestrator(
             event.session_id,
+            event.message_id,
             self.app.model_name,
             self.app.tool_registry,
             self.app.messaging,
             self.app.event_logger,
         )
-        response = await self.app.agent.run(conversation.copy(), orchestrator)
-        conversation.append({"role": "assistant", "content": response})
+        await self.app.agent.run(conversation, orchestrator)
         self.sessions[event.session_id] = conversation
         logger.info("Human input processing completed")
 
@@ -112,6 +112,7 @@ class Scheduler:
                     logger.warning(f"Unknown event type: {type(event)}")
             except Exception as e:
                 logger.error(f"Error during event processing: {e}", exc_info=True)
+                await self.app.messaging.notify(f"Error during event processing: {e}")
 
             self.app.event_queue.task_done()
             # Re-schedule next heartbeat

@@ -1,4 +1,7 @@
+# pyright: reportOptionalMemberAccess=false
+
 import asyncio
+import io
 import json
 import logging
 from abc import ABC, abstractmethod
@@ -7,22 +10,43 @@ from dataclasses import dataclass
 import lark_oapi as lark
 
 from agent.core.events import HumanInputEvent
+from agent.core.runtime import Runtime
 from agent.core.settings import Settings
 
 logger = logging.getLogger(__name__)
 
 
-class Messaging(ABC):
-    """Abstract base for messaging integrations (DIP)."""
-
+class MessageSender(ABC):
     @abstractmethod
-    async def run(self) -> None: ...
+    async def send_message(self, session_id: str, message: str) -> None: ...
 
+
+class MessageNotifier(ABC):
     @abstractmethod
     async def notify(self, message: str) -> None: ...
 
+
+class MessageReactor(ABC):
     @abstractmethod
-    async def send_message(self, session_id: str, message: str) -> None: ...
+    async def add_reaction(self, message_id: str, emoji_type: str) -> None: ...
+
+
+class MessageImageSender(ABC):
+    @abstractmethod
+    async def send_image(self, session_id: str, image_path: str) -> None: ...
+
+
+class MessageSource(ABC):
+    @abstractmethod
+    async def run(self) -> None: ...
+
+
+class Messaging(
+    MessageSender, MessageNotifier, MessageReactor, MessageImageSender, MessageSource
+):
+    """Abstract base for messaging integrations (DIP)."""
+
+    pass
 
 
 class NullMessaging(Messaging):
@@ -33,6 +57,12 @@ class NullMessaging(Messaging):
         pass
 
     async def send_message(self, session_id: str, message: str) -> None:
+        pass
+
+    async def add_reaction(self, message_id: str, emoji_type: str) -> None:
+        pass
+
+    async def send_image(self, session_id: str, image_path: str) -> None:
         pass
 
 
@@ -53,10 +83,14 @@ class FeishuMessageEvent:
 
 class FeishuMessaging(Messaging):
     def __init__(
-        self, config: FeishuMessagingConfig, event_queue: asyncio.Queue[HumanInputEvent]
+        self,
+        config: FeishuMessagingConfig,
+        event_queue: asyncio.Queue[HumanInputEvent],
+        runtime: Runtime,
     ):
         self._config = config
         self.event_queue = event_queue
+        self.runtime = runtime
         self.client = (
             lark.Client.builder()
             .app_id(self._config.app_id)
@@ -80,12 +114,12 @@ class FeishuMessaging(Messaging):
             return ""
         try:
             content = ""
-            data = response.data
-            for item in data.items:
+            items = response.data.items or []
+            for item in items:
                 parent_content = self._get_referenced_message(
                     item.parent_id, prefix + prefix
                 )
-                content_json = item.body.content
+                content_json = item.body.content or "{}"
                 content_dict = json.loads(content_json)
                 lines = content_dict.get("text", "").splitlines()
                 content = f"{prefix}QUOTE:\n{prefix}\n" + "\n".join(
@@ -100,7 +134,7 @@ class FeishuMessaging(Messaging):
             return ""
 
     def _on_message(self, data: lark.im.v1.P2ImMessageReceiveV1) -> None:
-        content_json = data.event.message.content
+        content_json = data.event.message.content or "{}"
         content_dict = json.loads(content_json)
         logger.info(f"Feishu event received: {content_json}")
 
@@ -115,7 +149,7 @@ class FeishuMessaging(Messaging):
             return
 
         sender_id = data.event.sender.sender_id.open_id
-        message_id = data.event.message.message_id
+        message_id = data.event.message.message_id or ""
         text = self._get_referenced_message(data.event.message.parent_id) + text
         asyncio.run_coroutine_threadsafe(
             self.event_queue.put(
@@ -170,8 +204,95 @@ class FeishuMessaging(Messaging):
                 f"Failed to send Feishu message: {response.code} - {response.msg}"
             )
 
+    async def add_reaction(self, message_id: str, emoji_type: str) -> None:
+        """Add a reaction to a message."""
+        request = (
+            lark.im.v1.CreateMessageReactionRequest.builder()
+            .message_id(message_id)
+            .request_body(
+                lark.im.v1.CreateMessageReactionRequestBody.builder()
+                .reaction_type(
+                    lark.im.v1.Emoji.builder().emoji_type(emoji_type).build()
+                )
+                .build()
+            )
+            .build()
+        )
 
-def create_messaging(settings: Settings, event_queue: asyncio.Queue) -> Messaging:
+        response = await asyncio.to_thread(
+            self.client.im.v1.message_reaction.create, request
+        )
+        if not response.success():
+            logger.error(f"Failed to add reaction: {response.code} - {response.msg}")
+            raise Exception(f"Failed to add reaction: {response.code} - {response.msg}")
+
+    async def send_image(self, session_id: str, image_path: str) -> None:
+        """Send an image to Feishu."""
+        try:
+            content = await self.runtime.read_file_internal(image_path)
+        except Exception as e:
+            logger.error(f"Failed to read image file {image_path}: {e}")
+            raise e
+
+        if not content:
+            raise Exception("Image file is empty.")
+
+        if len(content) > 1024 * 1024 * 10:
+            raise Exception("Image file size too large.")
+        image_buffer = io.BytesIO(content)
+
+        # Upload image
+        upload_request = (
+            lark.im.v1.CreateImageRequest.builder()
+            .request_body(
+                lark.im.v1.CreateImageRequestBody.builder()
+                .image_type("message")
+                .image(image_buffer)
+                .build()
+            )
+            .build()
+        )
+
+        upload_response = await asyncio.to_thread(
+            self.client.im.v1.image.create, upload_request
+        )
+        if not upload_response.success():
+            logger.error(
+                f"Failed to upload image: {upload_response.code} - {upload_response.msg}"
+            )
+            raise Exception(
+                f"Failed to upload image: {upload_response.code} - {upload_response.msg}"
+            )
+
+        image_key = upload_response.data.image_key
+
+        # Send image message
+        request = (
+            lark.im.v1.CreateMessageRequest.builder()
+            .receive_id_type("open_id")
+            .request_body(
+                lark.im.v1.CreateMessageRequestBody.builder()
+                .receive_id(session_id)
+                .msg_type("image")
+                .content(json.dumps({"image_key": image_key}))
+                .build()
+            )
+            .build()
+        )
+
+        response = await asyncio.to_thread(self.client.im.v1.message.create, request)
+        if not response.success():
+            logger.error(
+                f"Failed to send Feishu image message: {response.code} - {response.msg}"
+            )
+            raise Exception(
+                f"Failed to send Feishu image message: {response.code} - {response.msg}"
+            )
+
+
+def create_messaging(
+    settings: Settings, event_queue: asyncio.Queue, runtime: Runtime
+) -> Messaging:
     """Create the appropriate messaging backend."""
     if settings.feishu_app_id and settings.feishu_app_secret:
         config = FeishuMessagingConfig(
@@ -181,5 +302,5 @@ def create_messaging(settings: Settings, event_queue: asyncio.Queue) -> Messagin
             verification_token=settings.feishu_verification_token,
             notify_channel_id=settings.feishu_notify_channel_id,
         )
-        return FeishuMessaging(config, event_queue)
+        return FeishuMessaging(config, event_queue, runtime)
     return NullMessaging()

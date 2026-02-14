@@ -16,7 +16,7 @@ The agent follows **SOLID principles** with emphasis on:
 AppWithDependencies (app.py)
   ├── Settings (configuration)
   ├── EventLogger (remote logging)
-  ├── ContainerCommandExecutor (command execution)
+  ├── ContainerRuntime (command execution)
   ├── ToolRegistry (tool management)
   ├── OpenAIProvider (OpenAI-compatible API)
   ├── Agent (conversation loop)
@@ -41,7 +41,7 @@ class AppWithDependencies:
         self.settings = settings or get_settings()
         self.event_queue = asyncio.Queue()
         self.event_logger = EventLogger(...)
-        self.executor = ContainerCommandExecutor(...)
+        self.runtime = ContainerRuntime(...)
         self.tool_registry = ToolRegistry(...)
         self.llm_client = LLMFactory.create(...)
         self.agent = Agent(self.llm_client)
@@ -97,7 +97,7 @@ MY_TOOL_SCHEMA = {
 
 **Step 3**: Register in `register_default_tools()`
 ```python
-def register_default_tools(registry: ToolRegistry, executor, skill_loader):
+def register_default_tools(registry: ToolRegistry, runtime, skill_loader):
     # ... existing tools ...
     registry.register("my_tool", my_tool_handler, MY_TOOL_SCHEMA)
 ```
@@ -134,7 +134,7 @@ class MyMessaging(Messaging):
 
 **Step 2**: Update `create_messaging()` factory
 ```python
-def create_messaging(settings: Settings, event_queue: asyncio.Queue) -> Messaging:
+def create_messaging(settings: Settings, event_queue: asyncio.Queue, runtime: Runtime) -> Messaging:
     if settings.my_messaging_enabled:
         config = MyMessagingConfig(...)
         return MyMessaging(config)
@@ -163,9 +163,9 @@ class MyApiService(ApiService):
 ## Design Patterns
 
 ### 1. Strategy Pattern
-**CommandExecutor**: Swap execution strategies (container vs. local)
+**Runtime**: Swap execution strategies (container vs. local)
 ```python
-class ContainerCommandExecutor:
+class ContainerRuntime:
     async def execute(self, command: str) -> CommandResult:
         # Execute in container via podman/docker exec
 ```
@@ -186,7 +186,7 @@ await event_queue.put(HumanInputEvent(content=message))
 Core logic depends on **abstractions**, not concretions:
 - `Messaging` (not `FeishuMessaging`)
 - `ApiService` (not `UvicornApiService`)
-- `CommandExecutor` protocol (not specific runtime)
+- `Runtime` protocol (not specific runtime)
 
 ## Event-Driven Scheduler
 
@@ -227,7 +227,7 @@ def test_tool_registry():
 
 ### Integration Tests
 - Test API endpoints with TestClient
-- Test command executor with real container
+- Test command runtime with real container
 
 ```python
 async def test_api_endpoint():
@@ -306,6 +306,7 @@ agent/
 ├── core/
 │   ├── events.py           # Event types (HeartbeatEvent, HumanInputEvent)
 │   ├── event_logger.py     # Remote event streaming
+│   ├── runtime.py          # Container command execution
 │   ├── messaging.py        # Messaging abstraction (WeChat, Feishu, Null)
 │   └── settings.py         # Configuration (Pydantic)
 ├── llm/
@@ -314,7 +315,6 @@ agent/
 │   ├── openai.py           # OpenAI implementation
 │   └── prompt_builder.py   # System prompt construction
 └── tools/
-    ├── command_executor.py  # Container command execution
     ├── skill_loader.py      # Skill discovery
     ├── tool_registry.py     # Tool registration (OCP)
     └── toolbox.py           # Tool implementations

@@ -35,8 +35,24 @@ class Orchestrator(ABC):
     def __init__(self, model: str, tool_registry: ToolRegistry):
         self.model = model
         self.tool_registry = tool_registry
-        self.tool_schemas = self.tool_registry.schemas
-        self.tool_handlers = self.tool_registry.handlers
+        self.schemas = tool_registry.schemas
+        self.handlers = tool_registry.handlers
+
+    def register_instance_tool(
+        self,
+        func: Any,
+        schema: dict[str, Any],
+    ) -> None:
+        """Register a tool specific to this orchestrator instance."""
+        tool_name = func.__name__
+        tool_description = func.__doc__
+
+        self.schemas[tool_name] = {
+            "name": tool_name,
+            "description": tool_description,
+            "parameters": schema,
+        }
+        self.handlers[tool_name] = self.tool_registry.wrap_tool(func, tool_name)
 
     @abstractmethod
     async def process(self, message: Any, finish_reason: str) -> list[dict[str, str]]:
@@ -46,7 +62,7 @@ class Orchestrator(ABC):
         tool_name = tool_call.function.name
         tool_id = tool_call.id
 
-        if tool_name not in self.tool_handlers:
+        if tool_name not in self.handlers:
             return ToolCallResult(
                 tool_id,
                 tool_name,
@@ -72,9 +88,9 @@ class Orchestrator(ABC):
                         pass
             jsonschema.validate(
                 instance=args,
-                schema=self.tool_schemas[tool_name]["parameters"],
+                schema=self.schemas[tool_name]["parameters"],
             )
-            result: dict[str, Any] = await self.tool_handlers[tool_name](**args)
+            result: dict[str, Any] = await self.handlers[tool_name](**args)
         except json.JSONDecodeError as e:
             result = {
                 "status": "error",
@@ -148,6 +164,7 @@ class HumanInputOrchestrator(Orchestrator):
     def __init__(
         self,
         session_id: str,
+        message_id: str,
         model: str,
         tool_registry: ToolRegistry,
         messaging: Messaging,
@@ -155,8 +172,79 @@ class HumanInputOrchestrator(Orchestrator):
     ):
         super().__init__(model, tool_registry)
         self.session_id = session_id
+        self.message_id = message_id
         self.messaging = messaging
         self.event_logger = event_logger
+        self._register_tools()
+
+    def _register_tools(self) -> None:
+        async def add_reaction(emoji: str) -> dict[str, Any]:
+            """
+            React to the current message with an emoji.
+            """
+            try:
+                await self.messaging.add_reaction(self.message_id, emoji)
+                return {
+                    "status": "success",
+                    "message": f"Added reaction {emoji} to message",
+                }
+            except Exception as e:
+                logger.error(f"Failed to add reaction {emoji}: {e}", exc_info=True)
+                return {"status": "error", "message": str(e)}
+
+        self.register_instance_tool(
+            add_reaction,
+            {
+                "type": "object",
+                "properties": {
+                    "emoji": {
+                        "type": "string",
+                        "enum": [
+                            "OK",
+                            "THUMBSUP",
+                            "MUSCLE",
+                            "LOL",
+                            "THINKING",
+                            "Shrug",
+                            "Fire",
+                            "Coffee",
+                            "PARTY",
+                            "CAKE",
+                            "HEART",
+                        ],
+                        "description": "The emoji type to react with. OK, THUMBSUP, MUSCLE, LOL, THINKING, Shrug, Fire, Coffee, PARTY, CAKE, HEART",
+                    }
+                },
+                "required": ["emoji"],
+            },
+        )
+
+        async def send_image(image_path: str) -> dict[str, Any]:
+            """
+            Send an image file to the user. Image file size must be under 10 MiB.
+            """
+            try:
+                await self.messaging.send_image(self.session_id, image_path)
+                return {
+                    "status": "success",
+                    "message": f"Sent image {image_path} to user",
+                }
+            except Exception as e:
+                return {"status": "error", "message": str(e)}
+
+        self.register_instance_tool(
+            send_image,
+            {
+                "type": "object",
+                "properties": {
+                    "image_path": {
+                        "type": "string",
+                        "description": "Absolute path to the image file to send.",
+                    }
+                },
+                "required": ["image_path"],
+            },
+        )
 
     @override
     async def process(self, message: Any, finish_reason: str) -> list[dict[str, str]]:
@@ -215,13 +303,13 @@ class Agent:
         self.tool_registry = tool_registry
         self.messaging = messaging
         self.event_logger = event_logger
-        self.messages = []
+        self.system_messages = []
         self.system_prompt = ""
 
     def set_system_prompt(self, prompt: str) -> None:
         """Set the system prompt and reset conversation history."""
         self.system_prompt = prompt
-        self.messages = [{"role": "system", "content": self.system_prompt}]
+        self.system_messages = [{"role": "system", "content": self.system_prompt}]
 
     async def _chat(
         self, messages: list[dict[str, str]], orchestrator: Orchestrator
@@ -238,12 +326,16 @@ class Agent:
         Returns:
             The final content of the LLM's response.
         """
-        schemas = self.tool_registry.schemas
+        # Use orchestrator's schemas (includes instance tools)
+        schemas = orchestrator.schemas
 
         while True:
+            messages_to_be_sent = self.system_messages.copy()
+            messages_to_be_sent.extend(messages)
+
             response = await self.llm_client.do_completion(
                 model=self.model,
-                messages=messages,
+                messages=messages_to_be_sent,
                 tools=[{"type": "function", "function": fn} for fn in schemas.values()],
                 temperature=1.0,
                 top_p=1.0,
@@ -272,5 +364,4 @@ class Agent:
     ) -> str:
         """Run a single turn of the agent conversation."""
 
-        self.messages.extend(messages)
-        return await self._chat(self.messages, orchestrator)
+        return await self._chat(messages, orchestrator)

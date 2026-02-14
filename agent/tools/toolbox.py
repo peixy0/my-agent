@@ -1,7 +1,7 @@
 """
 Toolbox module containing tool functions for the agent.
 
-All file and command operations are delegated to the CommandExecutor,
+All file and command operations are delegated to the Runtime,
 which executes them inside the workspace container.
 """
 
@@ -10,13 +10,13 @@ from typing import Any, cast
 import trafilatura
 from ddgs import DDGS
 
-from agent.tools.command_executor import CommandExecutor
+from agent.core.runtime import Runtime
 from agent.tools.skill_loader import SkillLoader
 from agent.tools.tool_registry import ToolRegistry
 
 
 def register_default_tools(
-    registry: ToolRegistry, executor: CommandExecutor, skill_loader: SkillLoader
+    registry: ToolRegistry, runtime: Runtime, skill_loader: SkillLoader
 ) -> None:
     """Declaratively register all default tools into the registry."""
 
@@ -27,7 +27,7 @@ def register_default_tools(
         Use this tool to explore the filesystem, run scripts, or execute
         any shell command. The command runs in /workspace inside the container.
         """
-        return await executor.execute(command)
+        return await runtime.execute(command)
 
     async def web_search(query: str) -> dict[str, Any]:
         """
@@ -62,7 +62,7 @@ def register_default_tools(
         The filename should be relative to /workspace or an absolute path.
         Parent directories will be created if they don't exist.
         """
-        return await executor.write_file(filename, content)
+        return await runtime.write_file(filename, content)
 
     async def read_file(
         filename: str, start_line: int = 1, limit: int = 200
@@ -73,7 +73,7 @@ def register_default_tools(
         The filename should be relative to /workspace or an absolute path.
         Returns max 200 lines. Use start_line to read further.
         """
-        return await executor.read_file(filename, start_line=start_line, limit=limit)
+        return await runtime.read_file(filename, start_line=start_line, limit=limit)
 
     async def edit_file(filename: str, edits: list[dict[str, str]]) -> dict[str, Any]:
         """
@@ -84,7 +84,7 @@ def register_default_tools(
         2. Provide just enough context in SEARCH to be unique.
         3. If multiple changes are needed, provide multiple edit blocks.
         """
-        return await executor.edit_file(filename, edits)
+        return await runtime.edit_file(filename, edits)
 
     async def use_skill(skill_name: str) -> dict[str, Any]:
         """

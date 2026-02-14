@@ -13,21 +13,21 @@ This document specifies a system-level autonomous LLM agent. The agent runs on t
 │  │          AppWithDependencies (app.py)             │  │
 │  │         Composition Root / DI Container           │  │
 │  │                                                   │  │
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────────────┐│  │
-│  │  │  Agent   │  │   LLM    │  │  ToolRegistry    ││  │
-│  │  │  (conv   │──│  Client  │  │  (OCP: add tools ││  │
-│  │  │   loop)  │  │          │  │   without edits) ││  │
-│  │  └──────────┘  └──────────┘  └──────────────────┘│  │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────────────┐ │  │
+│  │  │  Agent   │  │   LLM    │  │  ToolRegistry    │ │  │
+│  │  │  (conv   │──│  Client  │  │  (OCP: add tools │ │  │
+│  │  │   loop)  │  │          │  │   without edits) │ │  │
+│  │  └──────────┘  └──────────┘  └──────────────────┘ │  │
 │  │                                                   │  │
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────────────┐│  │
-│  │  │Scheduler │  │  Event   │  │  ApiService      ││  │
-│  │  │ (events) │◄─│  Queue   │◄─│  POST /api/bot   ││  │
-│  │  └────┬─────┘  └──────────┘  └──────────────────┘│  │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────────────┐ │  │
+│  │  │Scheduler │  │  Event   │  │  ApiService      │ │  │
+│  │  │ (events) │◄─│  Queue   │◄─│  POST /api/bot   │ │  │
+│  │  └────┬─────┘  └──────────┘  └──────────────────┘ │  │
 │  │       │                                           │  │
-│  │  ┌────▼──────────────────────────────────────┐   │  │
-│  │  │         Command Executor                  │   │  │
-│  │  │   (ContainerCommandExecutor)              │   │  │
-│  │  └────┬──────────────────────────────────────┘   │  │
+│  │  ┌────▼──────────────────────────────────────┐    │  │
+│  │  │          Command runtime                  │    │  │
+│  │  │          (ContainerRuntime)               │    │  │
+│  │  └────┬──────────────────────────────────────┘    │  │
 │  └───────│───────────────────────────────────────────┘  │
 │          │ podman exec                                  │
 │  ┌───────▼───────────────────────────────────────────┐  │
@@ -47,7 +47,7 @@ This document specifies a system-level autonomous LLM agent. The agent runs on t
 
 ### AppWithDependencies (`agent/app.py`)
 - **Composition root** — single place where all dependencies are wired
-- Creates: Settings → EventLogger → Executor → ToolRegistry → OpenAIProvider → Agent → Messaging → ApiService
+- Creates: Settings → EventLogger → runtime → ToolRegistry → OpenAIProvider → Agent → Messaging → ApiService
 - `run()` method starts all background tasks (event logger, messaging, API server)
 - Replaces scattered module-level singletons with explicit construction
 
@@ -70,9 +70,9 @@ This document specifies a system-level autonomous LLM agent. The agent runs on t
 - OpenAI-compatible API with retry logic
 - Reads tool definitions from `ToolRegistry`
 
-### Command Executor (`agent/tools/command_executor.py`)
+### Command runtime (`agent/core/runtime.py`)
 - **Strategy pattern** for command execution
-- `ContainerCommandExecutor` executes commands via `podman exec`
+- `ContainerRuntime` executes commands via `podman exec`
 - All file operations (read/write/edit) also execute in container
 - Dependency injection enables testing
 
@@ -152,6 +152,7 @@ sys-agent/
 │   ├── core/
 │   │   ├── events.py          # Event types
 │   │   ├── event_logger.py    # Event logging
+│   │   ├── runtime.py         # Command runtime
 │   │   ├── messaging.py       # Messaging ABC + implementations
 │   │   └── settings.py        # Configuration
 │   ├── llm/
@@ -161,7 +162,6 @@ sys-agent/
 │   │   ├── openai.py          # OpenAI implementation
 │   │   └── prompt_builder.py  # System prompt construction
 │   ├── tools/
-│   │   ├── command_executor.py  # Container executor
 │   │   ├── tool_registry.py  # Tool registration (OCP)
 │   │   ├── toolbox.py        # Tool implementations
 │   │   └── skill_loader.py   # Skill discovery
@@ -169,7 +169,7 @@ sys-agent/
 │   └── main.py               # Entry point + Scheduler
 ├── tests/
 │   ├── test_api.py           # API endpoint tests
-│   ├── test_command_executor.py
+│   ├── test_runtime.py
 │   ├── test_skill_loader.py
 │   └── test_tool_registry.py # ToolRegistry tests
 ├── workspace/                # Persisted workspace
@@ -181,9 +181,9 @@ sys-agent/
 
 - **Single Responsibility**: Each class has one clear purpose (Agent ≠ ToolRegistry ≠ PromptBuilder)
 - **Open/Closed**: New tools added via `ToolRegistry.register()` — no existing code changes
-- **Liskov Substitution**: `CommandExecutor` implementations are interchangeable; `Messaging` implementations are interchangeable
-- **Interface Segregation**: `CommandExecutor` protocol is focused; `Messaging` ABC is minimal
-- **Dependency Inversion**: Core depends on abstractions (`OpenAIProvider`, `CommandExecutor`, `Messaging`, `ApiService`), not concretions. No module-level singletons — everything wired via composition root.
+- **Liskov Substitution**: `Runtime` implementations are interchangeable; `Messaging` implementations are interchangeable
+- **Interface Segregation**: `Runtime` protocol is focused; `Messaging` ABC is minimal
+- **Dependency Inversion**: Core depends on abstractions (`OpenAIProvider`, `Runtime`, `Messaging`, `ApiService`), not concretions. No module-level singletons — everything wired via composition root.
 
 ## 9. HTTP API
 

@@ -12,11 +12,11 @@ import os
 from agent.api.server import ApiService, create_api_service
 from agent.core.event_logger import EventLogger
 from agent.core.messaging import create_messaging
+from agent.core.runtime import ContainerRuntime, HostRuntime
 from agent.core.settings import Settings
 from agent.llm.agent import Agent
 from agent.llm.factory import LLMFactory
 from agent.llm.prompt_builder import SystemPromptBuilder
-from agent.tools.command_executor import ContainerCommandExecutor, HostCommandExecutor
 from agent.tools.skill_loader import SkillLoader
 from agent.tools.tool_registry import ToolRegistry
 from agent.tools.toolbox import register_default_tools
@@ -43,20 +43,20 @@ class AppWithDependencies:
         )
 
         # Tool infrastructure
-        self.executor = (
-            ContainerCommandExecutor(
+        self.runtime = (
+            ContainerRuntime(
                 container_name=self.settings.container_name,
                 runtime=self.settings.container_runtime,
             )
             if self.settings.container_runtime
-            else HostCommandExecutor()
+            else HostRuntime()
         )
         self.skill_loader = SkillLoader(self.settings.skills_dir)
         self.tool_registry = ToolRegistry(
             tool_timeout=self.settings.tool_timeout,
         )
-        self.messaging = create_messaging(self.settings, self.event_queue)
-        register_default_tools(self.tool_registry, self.executor, self.skill_loader)
+        self.messaging = create_messaging(self.settings, self.event_queue, self.runtime)
+        register_default_tools(self.tool_registry, self.runtime, self.skill_loader)
 
         # LLM client
         self.llm_client = LLMFactory(self.settings).create()
