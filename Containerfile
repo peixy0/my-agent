@@ -19,6 +19,10 @@ RUN \
     cp "$FILE" "$FILE.aliyun" && \
     cp "$FILE.bak" "$FILE"
 
+# Setup node
+RUN curl -fsSL https://fnm.vercel.app/install | bash
+RUN fnm install --lts
+
 # Set workspace as working directory
 WORKDIR /workspace
 

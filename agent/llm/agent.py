@@ -342,7 +342,8 @@ class Agent:
                 tool_choice="auto",
                 extra_body={
                     "chat_template_kwargs": {
-                        "thinking": True,
+                        "enable_thinking": True,
+                        "clear_thinking": False,
                     }
                 },
             )

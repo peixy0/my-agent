@@ -123,23 +123,22 @@ class ContainerRuntime(Runtime):
         """Execute a shell command in the container."""
         try:
             stdout, stderr, returncode = await self._exec_in_container(command)
-            if len(stdout) > 5000:
-                stdout = stdout[:5000] + "\n\n(truncated: output is too long)"
-            if len(stderr) > 5000:
-                stderr = stderr[:5000] + "\n\n(truncated: error is too long)"
-
-            if returncode != 0:
-                return {
-                    "status": "error",
-                    "returncode": returncode,
-                    "stdout": stdout,
-                    "stderr": stderr,
-                }
+            if len(stdout) > 10000:
+                stdout = (
+                    stdout[:10000]
+                    + "\n\n(truncated: output is too long, try saving to a temporary file and read section by section)"
+                )
+            if len(stderr) > 10000:
+                stderr = (
+                    stderr[:10000]
+                    + "\n\n(truncated: output is too long, try saving to a temporary file and read section by section)"
+                )
 
             return {
-                "status": "success",
+                "status": "success" if returncode == 0 else "error",
                 "stdout": stdout,
                 "stderr": stderr,
+                "return_code": returncode,
             }
 
         except Exception as e:
@@ -273,13 +272,24 @@ class HostRuntime(Runtime):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await process.communicate()
+            out_channel, err_channel = await process.communicate()
+            stdout = out_channel.decode("utf-8", errors="replace")
+            stderr = err_channel.decode("utf-8", errors="replace")
+            if len(stdout) > 10000:
+                stdout = (
+                    stdout[:10000]
+                    + "\n\n(truncated: output is too long, try saving to a temporary file and read section by section)"
+                )
+            if len(stderr) > 10000:
+                stderr = (
+                    stderr[:10000]
+                    + "\n\n(truncated: output is too long, try saving to a temporary file and read section by section)"
+                )
 
             return {
                 "status": "success",
-                "stdout": stdout.decode("utf-8", errors="replace"),
-                "stderr": stderr.decode("utf-8", errors="replace"),
-                "returncode": process.returncode or 0,
+                "stdout": stdout,
+                "stderr": stderr,
             }
         except Exception as e:
             logger.error(f"Command execution failed: {e}")
