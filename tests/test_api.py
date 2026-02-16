@@ -35,7 +35,7 @@ class TestAPI:
             "/api/bot",
             json={
                 "message": "Hello from test",
-                "session_id": "test-session",
+                "chat_id": "test-session",
                 "message_id": "test-message-id",
             },
         )
@@ -59,7 +59,7 @@ class TestAPI:
             "/api/bot",
             json={
                 "message": "",
-                "session_id": "empty-message-session",
+                "chat_id": "empty-message-session",
                 "message_id": "empty-message-id",
             },
         )

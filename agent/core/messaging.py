@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 class MessageSender(ABC):
     @abstractmethod
-    async def send_message(self, session_id: str, message: str) -> None: ...
+    async def send_message(self, chat_id: str, message: str) -> None: ...
 
 
 class MessageNotifier(ABC):
@@ -33,7 +33,7 @@ class MessageReactor(ABC):
 
 class MessageImageSender(ABC):
     @abstractmethod
-    async def send_image(self, session_id: str, image_path: str) -> None: ...
+    async def send_image(self, chat_id: str, image_path: str) -> None: ...
 
 
 class MessageSource(ABC):
@@ -56,13 +56,13 @@ class NullMessaging(Messaging):
     async def notify(self, message: str) -> None:
         pass
 
-    async def send_message(self, session_id: str, message: str) -> None:
+    async def send_message(self, chat_id: str, message: str) -> None:
         pass
 
     async def add_reaction(self, message_id: str, emoji_type: str) -> None:
         pass
 
-    async def send_image(self, session_id: str, image_path: str) -> None:
+    async def send_image(self, chat_id: str, image_path: str) -> None:
         pass
 
 
@@ -72,13 +72,13 @@ class FeishuMessagingConfig:
     app_secret: str
     encrypt_key: str
     verification_token: str
-    notify_channel_id: str
+    notify_chat_id: str
 
 
 @dataclass(frozen=True)
 class FeishuMessageEvent:
     content: str
-    sender_id: str
+    chat_id: str
 
 
 class FeishuMessaging(Messaging):
@@ -138,24 +138,18 @@ class FeishuMessaging(Messaging):
         content_dict = json.loads(content_json)
         logger.info(f"Feishu event received: {content_json}")
 
-        if not (
-            data.event.sender
-            and data.event.sender.sender_id
-            and data.event.sender.sender_id.open_id
-        ):
+        if not (data.event.message.chat_id):
             return
         text = content_dict.get("text", "")
         if not text:
             return
 
-        sender_id = data.event.sender.sender_id.open_id
+        chat_id = data.event.message.chat_id
         message_id = data.event.message.message_id or ""
         text = self._get_referenced_message(data.event.message.parent_id) + text
         asyncio.run_coroutine_threadsafe(
             self.event_queue.put(
-                HumanInputEvent(
-                    session_id=sender_id, message_id=message_id, message=text
-                )
+                HumanInputEvent(chat_id=chat_id, message_id=message_id, message=text)
             ),
             asyncio.get_running_loop(),
         )
@@ -181,16 +175,16 @@ class FeishuMessaging(Messaging):
 
     async def notify(self, message: str) -> None:
         """Notify method for sending messages, can be used by the agent to send proactive messages."""
-        await self.send_message(self._config.notify_channel_id, message)
+        await self.send_message(self._config.notify_chat_id, message)
 
-    async def send_message(self, session_id: str, message: str) -> None:
+    async def send_message(self, chat_id: str, message: str) -> None:
         """Send a message to Feishu using the last known sender."""
         request = (
             lark.im.v1.CreateMessageRequest.builder()
-            .receive_id_type("open_id")
+            .receive_id_type("chat_id")
             .request_body(
                 lark.im.v1.CreateMessageRequestBody.builder()
-                .receive_id(session_id)
+                .receive_id(chat_id)
                 .msg_type("text")
                 .content(json.dumps({"text": message}))
                 .build()
@@ -226,7 +220,7 @@ class FeishuMessaging(Messaging):
             logger.error(f"Failed to add reaction: {response.code} - {response.msg}")
             raise Exception(f"Failed to add reaction: {response.code} - {response.msg}")
 
-    async def send_image(self, session_id: str, image_path: str) -> None:
+    async def send_image(self, chat_id: str, image_path: str) -> None:
         """Send an image to Feishu."""
         try:
             content = await self.runtime.read_file_internal(image_path)
@@ -269,10 +263,10 @@ class FeishuMessaging(Messaging):
         # Send image message
         request = (
             lark.im.v1.CreateMessageRequest.builder()
-            .receive_id_type("open_id")
+            .receive_id_type("chat_id")
             .request_body(
                 lark.im.v1.CreateMessageRequestBody.builder()
-                .receive_id(session_id)
+                .receive_id(chat_id)
                 .msg_type("image")
                 .content(json.dumps({"image_key": image_key}))
                 .build()
@@ -300,7 +294,7 @@ def create_messaging(
             app_secret=settings.feishu_app_secret,
             encrypt_key=settings.feishu_encrypt_key,
             verification_token=settings.feishu_verification_token,
-            notify_channel_id=settings.feishu_notify_channel_id,
+            notify_chat_id=settings.feishu_notify_chat_id,
         )
         return FeishuMessaging(config, event_queue, runtime)
     return NullMessaging()

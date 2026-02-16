@@ -34,8 +34,8 @@ class Scheduler:
         self.app = app
         self.running = True
         self.heartbeat_task = None
-        self.sessions: dict[str, list[dict[str, str]]] = {}
-        self.messages: dict[str, set[str]] = {}
+        self.conversations: dict[str, list[dict[str, str]]] = {}
+        self.message_ids: dict[str, set[str]] = {}
 
     async def _schedule_heartbeat(self) -> None:
         logger.info(f"Sleeping for {self.app.settings.wake_interval_seconds} seconds")
@@ -59,29 +59,27 @@ class Scheduler:
 
     async def _process_human_input(self, event: HumanInputEvent) -> None:
         if event.message == "/new":
-            self.sessions[event.session_id] = []
-            self.messages[event.session_id] = set()
-            await self.app.messaging.send_message(
-                event.session_id, "New session started"
-            )
+            self.conversations[event.chat_id] = []
+            self.message_ids[event.chat_id] = set()
+            await self.app.messaging.send_message(event.chat_id, "New session started")
             return
 
-        messages = self.messages.get(event.session_id, set())
-        if event.message_id in messages:
+        message_ids = self.message_ids.get(event.chat_id, set())
+        if event.message_id in message_ids:
             logger.debug(f"Ignoring duplicated message {event.message_id}")
             return
-        messages.add(event.message_id)
-        self.messages[event.session_id] = messages
+        message_ids.add(event.message_id)
+        self.message_ids[event.chat_id] = message_ids
 
-        conversation = self.sessions.get(event.session_id, [])
+        conversation = self.conversations.get(event.chat_id, [])
         conversation.append({"role": "user", "content": event.message})
         logger.info(f"Processing human input: {event.message[:100]}...")
 
-        prompt = self.app.prompt_builder.build(session_id=event.session_id)
+        prompt = self.app.prompt_builder.build(chat_id=event.chat_id)
         self.app.agent.set_system_prompt(prompt)
 
         orchestrator = HumanInputOrchestrator(
-            event.session_id,
+            event.chat_id,
             event.message_id,
             self.app.model_name,
             self.app.tool_registry,
@@ -89,7 +87,7 @@ class Scheduler:
             self.app.event_logger,
         )
         await self.app.agent.run(conversation, orchestrator)
-        self.sessions[event.session_id] = conversation
+        self.conversations[event.chat_id] = conversation
         logger.info("Human input processing completed")
 
     async def run(self) -> None:
@@ -101,6 +99,8 @@ class Scheduler:
 
         while self.running:
             event = await self.app.event_queue.get()
+            if self.heartbeat_task:
+                _ = self.heartbeat_task.cancel()
             try:
                 if isinstance(event, HeartbeatEvent):
                     wake_time = datetime.now().astimezone().isoformat()
@@ -115,9 +115,6 @@ class Scheduler:
                 await self.app.messaging.notify(f"Error during event processing: {e}")
 
             self.app.event_queue.task_done()
-            # Re-schedule next heartbeat
-            if self.heartbeat_task:
-                _ = self.heartbeat_task.cancel()
             self.heartbeat_task = asyncio.create_task(self._schedule_heartbeat())
 
 

@@ -8,6 +8,6 @@ class HeartbeatEvent:
 
 @dataclass
 class HumanInputEvent:
-    session_id: str
+    chat_id: str
     message_id: str
     message: str

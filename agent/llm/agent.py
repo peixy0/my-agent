@@ -163,7 +163,7 @@ class HeartbeatOrchestrator(Orchestrator):
 class HumanInputOrchestrator(Orchestrator):
     def __init__(
         self,
-        session_id: str,
+        chat_id: str,
         message_id: str,
         model: str,
         tool_registry: ToolRegistry,
@@ -171,7 +171,7 @@ class HumanInputOrchestrator(Orchestrator):
         event_logger: EventLogger,
     ):
         super().__init__(model, tool_registry)
-        self.session_id = session_id
+        self.chat_id = chat_id
         self.message_id = message_id
         self.messaging = messaging
         self.event_logger = event_logger
@@ -224,7 +224,7 @@ class HumanInputOrchestrator(Orchestrator):
             Send an image file to the user. Image file size must be under 10 MiB.
             """
             try:
-                await self.messaging.send_image(self.session_id, image_path)
+                await self.messaging.send_image(self.chat_id, image_path)
                 return {
                     "status": "success",
                     "message": f"Sent image {image_path} to user",
@@ -250,7 +250,7 @@ class HumanInputOrchestrator(Orchestrator):
     async def process(self, message: Any, finish_reason: str) -> list[dict[str, str]]:
         if message.tool_calls:
             if message.content:
-                await self.messaging.send_message(self.session_id, message.content)
+                await self.messaging.send_message(self.chat_id, message.content)
             tool_results = await asyncio.gather(
                 *[self._handle_tool_call(tool_call) for tool_call in message.tool_calls]
             )
@@ -276,7 +276,7 @@ class HumanInputOrchestrator(Orchestrator):
             f"Human Input Response:\n\n{message.content}"
         )
         content = message.content.strip()
-        await self.messaging.send_message(self.session_id, content)
+        await self.messaging.send_message(self.chat_id, content)
         return []
 
 

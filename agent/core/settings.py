@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     feishu_app_secret: str = ""
     feishu_encrypt_key: str = ""
     feishu_verification_token: str = ""
-    feishu_notify_channel_id: str = ""
+    feishu_notify_chat_id: str = ""
 
     # API server settings
     api_enabled: bool = False
