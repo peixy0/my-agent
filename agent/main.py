@@ -63,6 +63,12 @@ class Scheduler:
             self.message_ids[event.chat_id] = set()
             await self.app.messaging.send_message(event.chat_id, "New session started")
             return
+        if event.message == "/heartbeat":
+            await self.app.event_queue.put(HeartbeatEvent())
+            await self.app.messaging.send_message(
+                event.chat_id, "New heartbeat started"
+            )
+            return
 
         message_ids = self.message_ids.get(event.chat_id, set())
         if event.message_id in message_ids:

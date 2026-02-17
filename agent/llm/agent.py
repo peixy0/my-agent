@@ -313,7 +313,7 @@ class Agent:
 
     async def _chat(
         self, messages: list[dict[str, str]], orchestrator: Orchestrator
-    ) -> str:
+    ) -> Any:
         """
         Sends a chat message to the LLM and handles the response.
 
@@ -324,7 +324,7 @@ class Agent:
             max_iterations: The maximum number of tool call iterations to perform.
 
         Returns:
-            The final content of the LLM's response.
+            The LLM's response.
         """
         # Use orchestrator's schemas (includes instance tools)
         schemas = orchestrator.schemas
@@ -355,14 +355,14 @@ class Agent:
 
             reply = await orchestrator.process(message, finish_reason)
             if not reply:
-                return message.content
+                return response
             messages.extend(reply)
 
     async def run(
         self,
         messages: list[dict[str, str]],
         orchestrator: Orchestrator,
-    ) -> str:
+    ) -> Any:
         """Run a single turn of the agent conversation."""
 
         return await self._chat(messages, orchestrator)
