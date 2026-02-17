@@ -30,6 +30,7 @@ class SystemPromptBuilder:
 
         identity_context = "# IDENTITY.md\n\n(empty)"
         user_context = "# USER.md\n\n(empty)"
+        memory_context = "# MEMORY.md\n\n(empty)"
         context_content = "# CONTEXT.md\n\n(empty)"
         try:
             with Path(f"{self._settings.workspace_dir}/IDENTITY.md").open() as f:
@@ -39,6 +40,11 @@ class SystemPromptBuilder:
         try:
             with Path(f"{self._settings.workspace_dir}/USER.md").open() as f:
                 user_context = f.read()
+        except FileNotFoundError:
+            pass
+        try:
+            with Path(f"{self._settings.workspace_dir}/MEMORY.md").open() as f:
+                memory_context = f.read()
         except FileNotFoundError:
             pass
         try:
@@ -78,6 +84,8 @@ Treat this directory as the single global workspace for file operations unless e
 {identity_context}
 
 {user_context}
+
+{memory_context}
 
 {context_content}
 

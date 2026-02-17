@@ -6,6 +6,7 @@ Runs the Scheduler (event loop) and FastAPI server concurrently.
 
 import asyncio
 import logging
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Final
 
@@ -17,6 +18,18 @@ from agent.llm.agent import HeartbeatOrchestrator, HumanInputOrchestrator
 logger = logging.getLogger("agent")
 
 AgentEvent = HeartbeatEvent | HumanInputEvent
+
+
+@dataclass
+class Conversation:
+    messages: list[dict[str, str]]
+    message_ids: set[str]
+    total_tokens: int
+
+    def __init__(self):
+        self.messages = []
+        self.message_ids = set()
+        self.total_tokens = 0
 
 
 class Scheduler:
@@ -34,8 +47,7 @@ class Scheduler:
         self.app = app
         self.running = True
         self.heartbeat_task = None
-        self.conversations: dict[str, list[dict[str, str]]] = {}
-        self.message_ids: dict[str, set[str]] = {}
+        self.conversations: dict[str, Conversation] = {}
 
     async def _schedule_heartbeat(self) -> None:
         logger.info(f"Sleeping for {self.app.settings.wake_interval_seconds} seconds")
@@ -59,8 +71,7 @@ class Scheduler:
 
     async def _process_human_input(self, event: HumanInputEvent) -> None:
         if event.message == "/new":
-            self.conversations[event.chat_id] = []
-            self.message_ids[event.chat_id] = set()
+            self.conversations[event.chat_id] = Conversation()
             await self.app.messaging.send_message(event.chat_id, "New session started")
             return
         if event.message == "/heartbeat":
@@ -70,15 +81,13 @@ class Scheduler:
             )
             return
 
-        message_ids = self.message_ids.get(event.chat_id, set())
-        if event.message_id in message_ids:
+        conversation = self.conversations.get(event.chat_id, Conversation())
+        if event.message_id in conversation.message_ids:
             logger.debug(f"Ignoring duplicated message {event.message_id}")
             return
-        message_ids.add(event.message_id)
-        self.message_ids[event.chat_id] = message_ids
+        conversation.message_ids.add(event.message_id)
 
-        conversation = self.conversations.get(event.chat_id, [])
-        conversation.append({"role": "user", "content": event.message})
+        conversation.messages.append({"role": "user", "content": event.message})
         logger.info(f"Processing human input: {event.message[:100]}...")
 
         prompt = self.app.prompt_builder.build(chat_id=event.chat_id)
@@ -92,7 +101,8 @@ class Scheduler:
             self.app.messaging,
             self.app.event_logger,
         )
-        await self.app.agent.run(conversation, orchestrator)
+        response = await self.app.agent.run(conversation.messages, orchestrator)
+        conversation.total_tokens = response.usage.total_tokens
         self.conversations[event.chat_id] = conversation
         logger.info("Human input processing completed")
 
