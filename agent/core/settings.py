@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     # Autonomous mode settings
     wake_interval_seconds: int = 1800  # 30 minutes
 
+    # Context compression settings
+    enable_compression: bool = True
+    context_max_tokens: int = 30000
+    context_num_keep_last: int = 10
+
     # Event streaming settings
     event_api_url: str = ""
     event_api_key: str = ""

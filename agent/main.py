@@ -30,6 +30,7 @@ class Conversation:
         self.messages = []
         self.message_ids = set()
         self.total_tokens = 0
+        self.previous_summary = ""
 
 
 class Scheduler:
@@ -55,10 +56,8 @@ class Scheduler:
         await self.app.event_queue.put(HeartbeatEvent())
 
     async def _process_heartbeat(self) -> None:
-        prompt = self.app.prompt_builder.build()
-        self.app.agent.set_system_prompt(prompt)
-
         logger.info("Executing agent heartbeat cycle")
+        prompt = self.app.prompt_builder.build()
         messages = [{"role": "user", "content": "SYSTEM EVENT: Heartbeat"}]
         orchestrator = HeartbeatOrchestrator(
             self.app.model_name,
@@ -66,8 +65,23 @@ class Scheduler:
             self.app.messaging,
             self.app.event_logger,
         )
-        await self.app.agent.run(messages, orchestrator)
+        await self.app.agent.run(prompt, messages, orchestrator)
         logger.info("Heartbeat cycle completed")
+
+    async def _try_to_compress_conversation(self, chat_id: str) -> None:
+        conversation = self.conversations.get(chat_id, Conversation())
+        if conversation.total_tokens < self.app.settings.context_max_tokens:
+            await self.app.messaging.send_message(
+                chat_id,
+                f"No need to compress, total tokens: {conversation.total_tokens}",
+            )
+            return
+        conversation.previous_summary = await self.app.agent.compress(
+            conversation.previous_summary, conversation.messages
+        )
+        conversation.total_tokens = 0
+        await self.app.messaging.send_message(chat_id, "Conversation compressed")
+        self.conversations[chat_id] = conversation
 
     async def _process_human_input(self, event: HumanInputEvent) -> None:
         if event.message == "/new":
@@ -80,6 +94,9 @@ class Scheduler:
                 event.chat_id, "New heartbeat started"
             )
             return
+        if event.message == "/compress":
+            await self._try_to_compress_conversation(event.chat_id)
+            return
 
         conversation = self.conversations.get(event.chat_id, Conversation())
         if event.message_id in conversation.message_ids:
@@ -91,8 +108,6 @@ class Scheduler:
         logger.info(f"Processing human input: {event.message[:100]}...")
 
         prompt = self.app.prompt_builder.build(chat_id=event.chat_id)
-        self.app.agent.set_system_prompt(prompt)
-
         orchestrator = HumanInputOrchestrator(
             event.chat_id,
             event.message_id,
@@ -101,7 +116,7 @@ class Scheduler:
             self.app.messaging,
             self.app.event_logger,
         )
-        response = await self.app.agent.run(conversation.messages, orchestrator)
+        response = await self.app.agent.run(prompt, conversation.messages, orchestrator)
         conversation.total_tokens = response.usage.total_tokens
         self.conversations[event.chat_id] = conversation
         logger.info("Human input processing completed")

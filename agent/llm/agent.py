@@ -306,7 +306,7 @@ class Agent:
         self.system_messages = []
         self.system_prompt = ""
 
-    def set_system_prompt(self, prompt: str) -> None:
+    def _set_system_prompt(self, prompt: str) -> None:
         """Set the system prompt and reset conversation history."""
         self.system_prompt = prompt
         self.system_messages = [{"role": "system", "content": self.system_prompt}]
@@ -360,9 +360,21 @@ class Agent:
 
     async def run(
         self,
+        system_prompt: str,
         messages: list[dict[str, str]],
         orchestrator: Orchestrator,
     ) -> Any:
         """Run a single turn of the agent conversation."""
-
+        self._set_system_prompt(system_prompt)
         return await self._chat(messages, orchestrator)
+
+    async def compress(
+        self,
+        previous_summary: str,
+        messages: list[dict[str, str]],
+        num_keep_last: int = 10,
+    ) -> str:
+        """
+        Compress and summarize conversation to reduce tokens.
+        """
+        raise NotImplementedError()
