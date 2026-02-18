@@ -5,7 +5,6 @@ Constructs the agent's system prompt from settings, skills, and runtime context.
 Separated from Agent to keep each class focused on one responsibility.
 """
 
-import datetime
 import platform
 from pathlib import Path
 
@@ -20,13 +19,9 @@ class SystemPromptBuilder:
         self._settings = settings
         self._skill_loader = skill_loader
 
-    def build(self, chat_id: str = "") -> str:
+    def build(self) -> str:
         """Build the full system prompt with current datetime and skills."""
-        now = datetime.datetime.now().astimezone()
-        current_datetime = now.strftime("%Y-%m-%d %H:%M:%S %Z%z")
-        now.strftime("%Y-%m-%d")
         operating_system = platform.system()
-        session_info = "" if not chat_id else f"**Session Key:** {chat_id}"
 
         identity_context = "# IDENTITY.md\n\n(empty)"
         user_context = "# USER.md\n\n(empty)"
@@ -61,13 +56,11 @@ class SystemPromptBuilder:
                 skills_text += f"- {s.name}: {s.description}\n"
             skills_text += "\nUse the `use_skill` tool for detailed instructions."
 
-        return f"""**Current System Time:** {current_datetime}
-**Timezone:** {now.tzinfo}
+        return f"""
+You are an autonomous agent acting as a personal assistant.
+
 **Host Environment:** {operating_system}
 **Directory:** `/workspace`
-{session_info}
-
-You are an autonomous agent acting as a personal assistant.
 
 You are provided with a set of tools and skills to help you with your tasks.
 You can use them to interact with the world or guide yourself to perform actions.

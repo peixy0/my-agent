@@ -58,7 +58,16 @@ class Scheduler:
     async def _process_heartbeat(self) -> None:
         logger.info("Executing agent heartbeat cycle")
         prompt = self.app.prompt_builder.build()
-        messages = [{"role": "user", "content": "SYSTEM EVENT: Heartbeat"}]
+        now = datetime.now().astimezone()
+        current_datetime = now.strftime("%Y-%m-%d %H:%M:%S %Z%z")
+        messages = [
+            {
+                "role": "user",
+                "content": f"""Current Time: {current_datetime}
+Timezone: {now.tzinfo}
+SYSTEM EVENT: Heartbeat""",
+            }
+        ]
         orchestrator = HeartbeatOrchestrator(
             self.app.model_name,
             self.app.tool_registry,
@@ -104,10 +113,20 @@ class Scheduler:
             return
         conversation.message_ids.add(event.message_id)
 
-        conversation.messages.append({"role": "user", "content": event.message})
+        now = datetime.now().astimezone()
+        current_datetime = now.strftime("%Y-%m-%d %H:%M:%S %Z%z")
+        conversation.messages.append(
+            {
+                "role": "user",
+                "content": f"""Message Time: {current_datetime}
+Timezone: {now.tzinfo}
+
+{event.message}""",
+            }
+        )
         logger.info(f"Processing human input: {event.message[:100]}...")
 
-        prompt = self.app.prompt_builder.build(chat_id=event.chat_id)
+        prompt = self.app.prompt_builder.build()
         orchestrator = HumanInputOrchestrator(
             event.chat_id,
             event.message_id,
