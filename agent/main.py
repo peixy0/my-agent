@@ -22,11 +22,14 @@ AgentEvent = HeartbeatEvent | HumanInputEvent
 
 @dataclass
 class Conversation:
+    chat_id: str
     messages: list[dict[str, str]]
     message_ids: set[str]
     total_tokens: int
+    previous_summary: str
 
-    def __init__(self):
+    def __init__(self, chat_id: str):
+        self.chat_id = chat_id
         self.messages = []
         self.message_ids = set()
         self.total_tokens = 0
@@ -77,24 +80,24 @@ SYSTEM EVENT: Heartbeat""",
         await self.app.agent.run(prompt, messages, orchestrator)
         logger.info("Heartbeat cycle completed")
 
-    async def _try_to_compress_conversation(self, chat_id: str) -> None:
-        conversation = self.conversations.get(chat_id, Conversation())
-        if conversation.total_tokens < self.app.settings.context_max_tokens:
-            await self.app.messaging.send_message(
-                chat_id,
-                f"No need to compress, total tokens: {conversation.total_tokens}",
-            )
-            return
-        conversation.previous_summary = await self.app.agent.compress(
-            conversation.previous_summary, conversation.messages
+    async def _compress_conversation(self, conversation: Conversation) -> None:
+        """Compress all conversation messages into a summary stored in the system prompt."""
+        logger.info("Compressing conversation context")
+        await self.app.messaging.send_message(
+            conversation.chat_id, "Max token reached, compressing conversation"
         )
+        conversation.previous_summary = await self.app.agent.compress(
+            conversation.messages
+        )
+        conversation.messages = []
         conversation.total_tokens = 0
-        await self.app.messaging.send_message(chat_id, "Conversation compressed")
-        self.conversations[chat_id] = conversation
+        await self.app.messaging.send_message(
+            conversation.chat_id, "Conversation compressed"
+        )
 
     async def _process_human_input(self, event: HumanInputEvent) -> None:
         if event.message == "/new":
-            self.conversations[event.chat_id] = Conversation()
+            self.conversations[event.chat_id] = Conversation(event.chat_id)
             await self.app.messaging.send_message(event.chat_id, "New session started")
             return
         if event.message == "/heartbeat":
@@ -104,10 +107,22 @@ SYSTEM EVENT: Heartbeat""",
             )
             return
         if event.message == "/compress":
-            await self._try_to_compress_conversation(event.chat_id)
+            conversation = self.conversations.get(
+                event.chat_id, Conversation(event.chat_id)
+            )
+            if conversation.total_tokens < self.app.settings.context_max_tokens:
+                await self.app.messaging.send_message(
+                    event.chat_id,
+                    f"No need to compress, total tokens: {conversation.total_tokens}",
+                )
+                return
+            await self._compress_conversation(conversation)
+            self.conversations[event.chat_id] = conversation
             return
 
-        conversation = self.conversations.get(event.chat_id, Conversation())
+        conversation = self.conversations.get(
+            event.chat_id, Conversation(event.chat_id)
+        )
         if event.message_id in conversation.message_ids:
             logger.debug(f"Ignoring duplicated message {event.message_id}")
             return
@@ -126,7 +141,7 @@ Timezone: {now.tzinfo}
         )
         logger.info(f"Processing human input: {event.message[:100]}...")
 
-        prompt = self.app.prompt_builder.build()
+        prompt = self.app.prompt_builder.build(conversation.previous_summary)
         orchestrator = HumanInputOrchestrator(
             event.chat_id,
             event.message_id,

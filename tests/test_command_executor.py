@@ -58,7 +58,7 @@ class TestContainerRuntime:
             result = await runtime.execute("bad-command")
 
         assert result["status"] == "error"
-        assert result["returncode"] == 1
+        assert result["return_code"] == 1
         assert "error message" in result["stderr"]
 
     @pytest.mark.asyncio
@@ -67,10 +67,9 @@ class TestContainerRuntime:
         with patch("shutil.which", return_value="/usr/bin/podman"):
             runtime = ContainerRuntime("test-container")
 
-        # Mock first call (wc -l) and second call (sed)
-        mock_process_wc = AsyncMock()
-        mock_process_wc.communicate.return_value = (b"10\n", b"")
-        mock_process_wc.returncode = 0
+        mock_process_total = AsyncMock()
+        mock_process_total.communicate.return_value = (b"10\n", b"")
+        mock_process_total.returncode = 0
 
         mock_process_sed = AsyncMock()
         mock_process_sed.communicate.return_value = (b"line 1\nline 2\n", b"")
@@ -78,7 +77,7 @@ class TestContainerRuntime:
 
         with patch(
             "asyncio.create_subprocess_exec",
-            side_effect=[mock_process_wc, mock_process_sed],
+            side_effect=[mock_process_total, mock_process_sed],
         ):
             result = await runtime.read_file("test.txt", start_line=1, limit=2)
 
@@ -117,18 +116,17 @@ class TestContainerRuntime:
         with patch("shutil.which", return_value="/usr/bin/podman"):
             runtime = ContainerRuntime("test-container")
 
-        # Mock read (wc then sed) returning different content
-        mock_process_wc = AsyncMock()
-        mock_process_wc.communicate.return_value = (b"1\n", b"")
-        mock_process_wc.returncode = 0
-
-        mock_process_sed = AsyncMock()
-        mock_process_sed.communicate.return_value = (b"different content", b"")
-        mock_process_sed.returncode = 0
+        # Mock read (base64) returning different content
+        mock_process_base64 = AsyncMock()
+        mock_process_base64.communicate.return_value = (
+            b"ZGlmZmVyZW50IGNvbnRlbnQ=",
+            b"",
+        )  # "different content" in base64
+        mock_process_base64.returncode = 0
 
         with patch(
             "asyncio.create_subprocess_exec",
-            side_effect=[mock_process_wc, mock_process_sed],
+            side_effect=[mock_process_base64],
         ):
             result = await runtime.edit_file(
                 "test.txt", [{"search": "original", "replace": "replaced"}]

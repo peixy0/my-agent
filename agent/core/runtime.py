@@ -83,7 +83,7 @@ class ContainerRuntime(Runtime):
         """
         Execute a command in the container and wait for it to complete.
         If you need long running command, consider running it in background and use `run_command` to check its status.
-        Returns stdout, stderr, returncode.
+        Returns stdout, stderr, return_code.
         """
         full_command = [self.runtime, "exec"]
 
@@ -122,7 +122,7 @@ class ContainerRuntime(Runtime):
     async def execute(self, command: str) -> dict[str, Any]:
         """Execute a shell command in the container."""
         try:
-            stdout, stderr, returncode = await self._exec_in_container(command)
+            stdout, stderr, return_code = await self._exec_in_container(command)
             if len(stdout) > 10000:
                 stdout = (
                     stdout[:10000]
@@ -135,10 +135,10 @@ class ContainerRuntime(Runtime):
                 )
 
             return {
-                "status": "success" if returncode == 0 else "error",
+                "status": "success" if return_code == 0 else "error",
                 "stdout": stdout,
                 "stderr": stderr,
-                "return_code": returncode,
+                "return_code": return_code,
             }
 
         except Exception as e:
@@ -150,8 +150,8 @@ class ContainerRuntime(Runtime):
         """Read entire content from a file in the container from host by base64 and convert."""
         try:
             base64_cmd = f"base64 '{filename}'"
-            stdout, stderr, returncode = await self._exec_in_container(base64_cmd)
-            if returncode != 0:
+            stdout, stderr, return_code = await self._exec_in_container(base64_cmd)
+            if return_code != 0:
                 raise Exception(stderr.strip())
             return base64.b64decode(stdout)
         except Exception as e:
@@ -165,9 +165,9 @@ class ContainerRuntime(Runtime):
         """Read content from a file in the container with pagination."""
         # Get total lines first
         total_cmd = f"sed -n '$=' '{filename}'"
-        stdout, stderr, returncode = await self._exec_in_container(total_cmd)
+        stdout, stderr, return_code = await self._exec_in_container(total_cmd)
 
-        if returncode != 0:
+        if return_code != 0:
             return {"status": "error", "message": stderr.strip() or "File not found"}
 
         try:
@@ -181,9 +181,9 @@ class ContainerRuntime(Runtime):
         end = start + limit - 1
         read_cmd = f"sed -n '{start},{end}p' '{filename}'"
 
-        stdout, stderr, returncode = await self._exec_in_container(read_cmd)
+        stdout, stderr, return_code = await self._exec_in_container(read_cmd)
 
-        if returncode != 0:
+        if return_code != 0:
             return {"status": "error", "message": stderr.strip()}
 
         content = stdout
@@ -210,11 +210,11 @@ class ContainerRuntime(Runtime):
         encoded_bytes = base64.b64encode(content.encode("utf-8"))
         command = f"base64 -d > '{filename}'"
 
-        _, stderr, returncode = await self._exec_in_container(
+        _, stderr, return_code = await self._exec_in_container(
             command, input_data=encoded_bytes
         )
 
-        if returncode != 0:
+        if return_code != 0:
             return {"status": "error", "message": stderr.strip()}
 
         return {"status": "success", "message": f"Content saved to {filename}"}
@@ -285,11 +285,13 @@ class HostRuntime(Runtime):
                     stderr[:10000]
                     + "\n\n(truncated: output is too long, try saving to a temporary file and read section by section)"
                 )
+            return_code = process.returncode
 
             return {
-                "status": "success",
+                "status": "success" if return_code == 0 else "error",
                 "stdout": stdout,
                 "stderr": stderr,
+                "return_code": return_code,
             }
         except Exception as e:
             logger.error(f"Command execution failed: {e}")

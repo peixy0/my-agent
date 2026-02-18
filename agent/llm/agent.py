@@ -368,13 +368,52 @@ class Agent:
         self._set_system_prompt(system_prompt)
         return await self._chat(messages, orchestrator)
 
-    async def compress(
-        self,
-        previous_summary: str,
-        messages: list[dict[str, str]],
-        num_keep_last: int = 10,
-    ) -> str:
+    async def compress(self, messages: list[dict[str, str]]) -> str:
         """
-        Compress and summarize conversation to reduce tokens.
+        Compress conversation history via full LLM summarization.
+
+        Sends all messages to the LLM with a dedicated summarization prompt
+        and returns a concise digest preserving key facts, decisions, tool
+        results, and ongoing tasks.
+
+        Returns an empty string when there is nothing to summarize.
+        The caller is responsible for clearing conversation.messages and
+        storing the returned summary in conversation.previous_summary.
         """
-        raise NotImplementedError()
+        if not messages:
+            return ""
+
+        compression_prompt = (
+            "You are a conversation summarizer. "
+            "Produce a concise but complete summary of the conversation below. "
+            "Preserve: key facts, decisions made, tool results, file paths, "
+            "ongoing tasks, and any important context the agent will need later. "
+            "Write in third-person past tense. Be dense — omit pleasantries."
+        )
+
+        # Serialize messages as a readable transcript for the LLM
+        transcript_parts: list[str] = []
+        for msg in messages:
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "")
+            if content:
+                transcript_parts.append(f"[{role.upper()}]\n{content}")
+
+        transcript = "\n\n".join(transcript_parts)
+
+        response = await self.llm_client.do_completion(
+            model=self.model,
+            messages=[
+                {"role": "system", "content": compression_prompt},
+                {
+                    "role": "user",
+                    "content": f"Conversation to summarize:\n\n{transcript}",
+                },
+            ],
+            temperature=0.3,
+            top_p=1.0,
+        )
+
+        summary: str = response.choices[0].message.content or ""
+        logger.info(f"Conversation compressed to {response.usage.total_tokens} tokens")
+        return summary.strip()

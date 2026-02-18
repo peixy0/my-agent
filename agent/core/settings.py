@@ -34,7 +34,7 @@ class Settings(BaseSettings):
 
     # Context compression settings
     enable_compression: bool = True
-    context_max_tokens: int = 30000
+    context_max_tokens: int = 100000
     context_num_keep_last: int = 10
 
     # Event streaming settings

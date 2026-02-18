@@ -19,7 +19,7 @@ class SystemPromptBuilder:
         self._settings = settings
         self._skill_loader = skill_loader
 
-    def build(self) -> str:
+    def build(self, previous_summary: str = "") -> str:
         """Build the full system prompt with current datetime and skills."""
         operating_system = platform.system()
 
@@ -56,6 +56,15 @@ class SystemPromptBuilder:
                 skills_text += f"- {s.name}: {s.description}\n"
             skills_text += "\nUse the `use_skill` tool for detailed instructions."
 
+        summary_section = ""
+        if previous_summary:
+            summary_section = f"""# Conversation Summary
+
+The following is a compressed summary of the conversation history so far:
+
+{previous_summary}
+"""
+
         return f"""
 You are an autonomous agent acting as a personal assistant.
 
@@ -82,6 +91,7 @@ Treat this directory as the single global workspace for file operations unless e
 
 {context_content}
 
+{summary_section}
 # Silent Replies
 
 If you are woken up because of a heartbeat, and there is nothing that needs attention, respond with content ends with: NO_REPORT
