@@ -32,4 +32,7 @@ class OpenAIProvider:
         """
         Performs a chat completion with rate limiting and retry logic using tenacity.
         """
-        return await self.client.chat.completions.create(*args, **kwargs)
+        response = await self.client.chat.completions.create(*args, **kwargs)
+        if not response.choices:
+            raise Exception("Invalid response")
+        return response

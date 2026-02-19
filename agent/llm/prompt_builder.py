@@ -98,6 +98,7 @@ If you are woken up because of a heartbeat, and there is nothing that needs atte
 
 Rules:
 - System treats response ending with NO_REPORT as "no need to report" and will not send it to human user.
+- NO_REPORT must be at the end
 - Never append it to an actual response (never include NO_REPORT in real replies)
 - Never wrap it in markdown or code blocks
 
