@@ -297,15 +297,38 @@ class HostRuntime(Runtime):
             logger.error(f"Command execution failed: {e}")
             return {"status": "error", "message": str(e)}
 
+    def _read_file_internal_sync(self, filename: str) -> bytes:
+        with Path(filename).open("rb") as f:
+            return f.read()
+
     @override
     async def read_file_internal(self, filename: str) -> bytes:
         """Read entire content from a file in the host"""
         try:
-            with Path(filename).open("rb") as f:
-                return f.read()
+            return await asyncio.to_thread(self._read_file_internal_sync, filename)
         except Exception as e:
             logger.error(f"Failed to read file {filename}: {e}")
             raise
+
+    def _read_file_sync(
+        self, filename: str, start_line: int, limit: int
+    ) -> dict[str, Any]:
+        path = Path(filename)
+        if not path.exists():
+            return {"status": "error", "message": "File not found"}
+        with path.open("r", encoding="utf-8") as f:
+            lines = f.readlines()
+        total_lines = len(lines)
+        start = max(1, start_line)
+        end = start + limit - 1
+        content = "".join(lines[start - 1 : end])
+        return {
+            "status": "success",
+            "content": content,
+            "total_lines": total_lines,
+            "start_line": start,
+            "returned_lines": len(content.splitlines()),
+        }
 
     @override
     async def read_file(
@@ -315,29 +338,19 @@ class HostRuntime(Runtime):
         Read content from a file
         """
         try:
-            path = Path(filename)
-            if not path.exists():
-                return {"status": "error", "message": "File not found"}
-
-            with path.open("r", encoding="utf-8") as f:
-                lines = f.readlines()
-
-            total_lines = len(lines)
-            start = max(1, start_line)
-            end = start + limit - 1
-            content = "".join(lines[start - 1 : end])
-
-            return {
-                "status": "success",
-                "content": content,
-                "total_lines": total_lines,
-                "start_line": start,
-                "returned_lines": len(content.splitlines()),
-            }
-
+            return await asyncio.to_thread(
+                self._read_file_sync, filename, start_line, limit
+            )
         except Exception as e:
             logger.error(f"File reading failed: {e}")
             return {"status": "error", "message": str(e)}
+
+    def _write_file_sync(self, filename: str, content: str) -> dict[str, Any]:
+        path = Path(filename)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as f:
+            f.write(content)
+        return {"status": "success", "message": f"Content saved to {filename}"}
 
     @override
     async def write_file(self, filename: str, content: str) -> dict[str, Any]:
@@ -345,11 +358,7 @@ class HostRuntime(Runtime):
         Write content to a file
         """
         try:
-            path = Path(filename)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with path.open("w", encoding="utf-8") as f:
-                f.write(content)
-            return {"status": "success", "message": f"Content saved to {filename}"}
+            return await asyncio.to_thread(self._write_file_sync, filename, content)
         except Exception as e:
             logger.error(f"File writing failed: {e}")
             return {"status": "error", "message": str(e)}

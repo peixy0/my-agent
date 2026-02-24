@@ -18,4 +18,5 @@ class LLMFactory:
         return OpenAIProvider(
             url=self.settings.openai_base_url,
             api_key=self.settings.openai_api_key,
+            proxy=self.settings.proxy,
         )

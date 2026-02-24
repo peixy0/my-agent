@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Final
 
+import uvloop
+
 from agent.app import AppWithDependencies
 from agent.core.events import HeartbeatEvent, HumanInputEvent
 from agent.core.settings import get_settings
@@ -46,12 +48,13 @@ class Scheduler:
     app: Final[AppWithDependencies]
     running: bool
     heartbeat_task: asyncio.Task[None] | None
+    conversations: dict[str, Conversation]
 
     def __init__(self, app: AppWithDependencies):
         self.app = app
         self.running = True
         self.heartbeat_task = None
-        self.conversations: dict[str, Conversation] = {}
+        self.conversations = {}
 
     async def _schedule_heartbeat(self) -> None:
         logger.info(f"Sleeping for {self.app.settings.wake_interval_seconds} seconds")
@@ -155,6 +158,23 @@ Timezone: {now.tzinfo}
         self.conversations[event.chat_id] = conversation
         logger.info("Human input processing completed")
 
+    async def _dispatch(self, event: AgentEvent) -> None:
+        """Dispatch a single event as a self-contained async task."""
+        try:
+            if self.heartbeat_task:
+                self.heartbeat_task.cancel()
+            if isinstance(event, HeartbeatEvent):
+                await self._process_heartbeat()
+            elif isinstance(event, HumanInputEvent):
+                await self._process_human_input(event)
+            else:
+                logger.warning(f"Unknown event type: {type(event)}")
+        except Exception as e:
+            logger.error(f"Error during event processing: {e}", exc_info=True)
+            await self.app.messaging.notify(f"Error during event processing: {e}")
+        finally:
+            self.heartbeat_task = asyncio.create_task(self._schedule_heartbeat())
+
     async def run(self) -> None:
         logger.info("Scheduler starting...")
         logger.info(f"Wake interval: {self.app.settings.wake_interval_seconds} seconds")
@@ -164,23 +184,8 @@ Timezone: {now.tzinfo}
 
         while self.running:
             event = await self.app.event_queue.get()
-            if self.heartbeat_task:
-                _ = self.heartbeat_task.cancel()
-            try:
-                if isinstance(event, HeartbeatEvent):
-                    wake_time = datetime.now().astimezone().isoformat()
-                    logger.info(f"Wake cycle at {wake_time}")
-                    await self._process_heartbeat()
-                elif isinstance(event, HumanInputEvent):
-                    await self._process_human_input(event)
-                else:
-                    logger.warning(f"Unknown event type: {type(event)}")
-            except Exception as e:
-                logger.error(f"Error during event processing: {e}", exc_info=True)
-                await self.app.messaging.notify(f"Error during event processing: {e}")
-
+            await self._dispatch(event)
             self.app.event_queue.task_done()
-            self.heartbeat_task = asyncio.create_task(self._schedule_heartbeat())
 
 
 async def main() -> None:
@@ -205,4 +210,4 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    uvloop.run(main())
