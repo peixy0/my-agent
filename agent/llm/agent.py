@@ -97,7 +97,8 @@ class Orchestrator(ABC):
         if finish_reason != "stop":
             return [{"role": "user", "content": "continue"}]
 
-        content = message.content.strip()
+        content = message.content or ""
+        content = content.strip()
         await self.event_logger.log_agent_response(
             f"{self.response_label} Response:\n\n{message.content}"
         )
@@ -170,7 +171,7 @@ class HeartbeatOrchestrator(Orchestrator):
 
     @override
     async def _on_final_response(self, content: str) -> None:
-        if not content.endswith("NO_REPORT"):
+        if content and not content.endswith("NO_REPORT"):
             await self.messaging.notify(content)
 
 
@@ -330,6 +331,7 @@ class Agent:
                 temperature=1.0,
                 top_p=1.0,
                 tool_choice="auto",
+                timeout=600,
                 extra_body={
                     "chat_template_kwargs": {
                         "enable_thinking": True,
