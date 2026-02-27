@@ -22,31 +22,17 @@ class SystemPromptBuilder:
     def build(self, previous_summary: str = "") -> str:
         """Build the full system prompt with current datetime and skills."""
         operating_system = platform.system()
+        bootstrap_files = ["IDENTITY.md", "USER.md", "MEMORY.md", "CONTEXT.md"]
 
-        identity_context = "# IDENTITY.md\n\n(empty)"
-        user_context = "# USER.md\n\n(empty)"
-        memory_context = "# MEMORY.md\n\n(empty)"
-        context_content = "# CONTEXT.md\n\n(empty)"
-        try:
-            with Path(f"{self._settings.workspace_dir}/IDENTITY.md").open() as f:
-                identity_context = f.read()
-        except FileNotFoundError:
-            pass
-        try:
-            with Path(f"{self._settings.workspace_dir}/USER.md").open() as f:
-                user_context = f.read()
-        except FileNotFoundError:
-            pass
-        try:
-            with Path(f"{self._settings.workspace_dir}/MEMORY.md").open() as f:
-                memory_context = f.read()
-        except FileNotFoundError:
-            pass
-        try:
-            with Path(f"{self._settings.workspace_dir}/CONTEXT.md").open() as f:
-                context_content = f.read()
-        except FileNotFoundError:
-            pass
+        bootstrap_context = ""
+        for filename in bootstrap_files:
+            try:
+                with Path(f"{self._settings.workspace_dir}/{filename}").open() as f:
+                    content = f.read()
+                    if content:
+                        bootstrap_context += f"# {filename}\n\n{content}\n\n"
+            except FileNotFoundError:
+                pass
 
         skill_summaries = self._skill_loader.discover_skills()
         skills_text = ""
@@ -83,15 +69,10 @@ You can use them to interact with the world or guide yourself to perform actions
 Your working directory is `/workspace`.
 Treat this directory as the single global workspace for file operations unless explicitly instructed otherwise.
 
-{identity_context}
-
-{user_context}
-
-{memory_context}
-
-{context_content}
+{bootstrap_context}
 
 {summary_section}
+
 # Silent Replies
 
 If you are woken up because of a heartbeat, and there is nothing that needs attention, respond with content ends with: NO_REPORT

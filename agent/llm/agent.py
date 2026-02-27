@@ -32,11 +32,21 @@ class ToolCallResult:
 
 
 class Orchestrator(ABC):
-    def __init__(self, model: str, tool_registry: ToolRegistry):
+    response_label: str = "Agent"
+
+    def __init__(
+        self,
+        model: str,
+        tool_registry: ToolRegistry,
+        messaging: Messaging,
+        event_logger: EventLogger,
+    ):
         self.model = model
         self.tool_registry = tool_registry
         self.schemas = tool_registry.schemas
         self.handlers = tool_registry.handlers
+        self.messaging = messaging
+        self.event_logger = event_logger
 
     def register_instance_tool(
         self,
@@ -55,8 +65,44 @@ class Orchestrator(ABC):
         self.handlers[tool_name] = self.tool_registry.wrap_tool(func, tool_name)
 
     @abstractmethod
-    async def process(self, message: Any, finish_reason: str) -> list[dict[str, str]]:
+    async def _before_tool_use(self, message: Any) -> None:
+        """Hook called before tool results are collected. Override for extra behaviour."""
         pass
+
+    @abstractmethod
+    async def _on_final_response(self, content: str) -> None:
+        """Handle the final (non-tool-call) LLM response."""
+        pass
+
+    async def process(self, message: Any, finish_reason: str) -> list[dict[str, str]]:
+        if message.tool_calls:
+            await self._before_tool_use(message)
+            tool_results = await asyncio.gather(
+                *[self._handle_tool_call(tc) for tc in message.tool_calls]
+            )
+            reply: list[dict[str, Any]] = []
+            for tool_result in tool_results:
+                await self.event_logger.log_tool_use(
+                    tool_result.tool_name, tool_result.args, tool_result.result
+                )
+                reply.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool_result.tool_id,
+                        "content": json.dumps(tool_result.result, ensure_ascii=False),
+                    }
+                )
+            return reply
+
+        if finish_reason != "stop":
+            return [{"role": "user", "content": "continue"}]
+
+        content = message.content.strip()
+        await self.event_logger.log_agent_response(
+            f"{self.response_label} Response:\n\n{message.content}"
+        )
+        await self._on_final_response(content)
+        return []
 
     async def _handle_tool_call(self, tool_call: Any) -> ToolCallResult:
         tool_name = tool_call.function.name
@@ -116,51 +162,21 @@ class Orchestrator(ABC):
 
 
 class HeartbeatOrchestrator(Orchestrator):
-    def __init__(
-        self,
-        model: str,
-        tool_registry: ToolRegistry,
-        messaging: Messaging,
-        event_logger: EventLogger,
-    ):
-        super().__init__(model, tool_registry)
-        self.messaging = messaging
-        self.event_logger = event_logger
+    response_label = "Heartbeat"
 
     @override
-    async def process(self, message: Any, finish_reason: str) -> list[dict[str, str]]:
-        if message.tool_calls:
-            tool_results = await asyncio.gather(
-                *[self._handle_tool_call(tool_call) for tool_call in message.tool_calls]
-            )
+    async def _before_tool_use(self, message: Any) -> None:
+        pass
 
-            reply: list[dict[str, Any]] = []
-            for tool_result in tool_results:
-                await self.event_logger.log_tool_use(
-                    tool_result.tool_name, tool_result.args, tool_result.result
-                )
-                reply.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tool_result.tool_id,
-                        "content": json.dumps(tool_result.result, ensure_ascii=False),
-                    }
-                )
-            return reply
-
-        if finish_reason != "stop":
-            return [{"role": "user", "content": "continue"}]
-
-        await self.event_logger.log_agent_response(
-            f"Heartbeat Response:\n\n{message.content}"
-        )
-        content = message.content.strip()
+    @override
+    async def _on_final_response(self, content: str) -> None:
         if not content.endswith("NO_REPORT"):
             await self.messaging.notify(content)
-        return []
 
 
 class HumanInputOrchestrator(Orchestrator):
+    response_label = "Human Input"
+
     def __init__(
         self,
         chat_id: str,
@@ -170,11 +186,9 @@ class HumanInputOrchestrator(Orchestrator):
         messaging: Messaging,
         event_logger: EventLogger,
     ):
-        super().__init__(model, tool_registry)
+        super().__init__(model, tool_registry, messaging, event_logger)
         self.chat_id = chat_id
         self.message_id = message_id
-        self.messaging = messaging
-        self.event_logger = event_logger
         self._register_tools()
 
     def _register_tools(self) -> None:
@@ -247,37 +261,13 @@ class HumanInputOrchestrator(Orchestrator):
         )
 
     @override
-    async def process(self, message: Any, finish_reason: str) -> list[dict[str, str]]:
-        if message.tool_calls:
-            if message.content:
-                await self.messaging.send_message(self.chat_id, message.content)
-            tool_results = await asyncio.gather(
-                *[self._handle_tool_call(tool_call) for tool_call in message.tool_calls]
-            )
+    async def _before_tool_use(self, message: Any) -> None:
+        if message.content:
+            await self.messaging.send_message(self.chat_id, message.content)
 
-            reply: list[dict[str, Any]] = []
-            for tool_result in tool_results:
-                await self.event_logger.log_tool_use(
-                    tool_result.tool_name, tool_result.args, tool_result.result
-                )
-                reply.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tool_result.tool_id,
-                        "content": json.dumps(tool_result.result, ensure_ascii=False),
-                    }
-                )
-            return reply
-
-        if finish_reason != "stop":
-            return [{"role": "user", "content": "continue"}]
-
-        await self.event_logger.log_agent_response(
-            f"Human Input Response:\n\n{message.content}"
-        )
-        content = message.content.strip()
+    @override
+    async def _on_final_response(self, content: str) -> None:
         await self.messaging.send_message(self.chat_id, content)
-        return []
 
 
 class Agent:
