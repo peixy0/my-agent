@@ -78,7 +78,6 @@ SYSTEM EVENT: Heartbeat""",
             self.app.model_name,
             self.app.tool_registry,
             self.app.messaging,
-            self.app.event_logger,
         )
         await self.app.agent.run(prompt, messages, orchestrator)
         logger.info("Heartbeat cycle completed")
@@ -151,7 +150,6 @@ Timezone: {now.tzinfo}
             self.app.model_name,
             self.app.tool_registry,
             self.app.messaging,
-            self.app.event_logger,
         )
         response = await self.app.agent.run(prompt, conversation.messages, orchestrator)
         conversation.total_tokens = response.usage.total_tokens
@@ -199,7 +197,7 @@ async def main() -> None:
     logger.addHandler(logger_stream)
     logger.setLevel(logging.DEBUG)
 
-    # Start dependent background tasks (event logger, messaging, API server)
+    # Start dependent background tasks (messaging, API server)
     app = AppWithDependencies(get_settings())
     await app.run()
 

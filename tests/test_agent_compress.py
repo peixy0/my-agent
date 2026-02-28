@@ -14,13 +14,11 @@ def _make_agent() -> Agent:
     tool_registry.schemas = {}
     tool_registry.handlers = {}
     messaging = MagicMock()
-    event_logger = MagicMock()
     return Agent(
         llm_client=llm_client,
         model="test-model",
         tool_registry=tool_registry,
         messaging=messaging,
-        event_logger=event_logger,
     )
 
 

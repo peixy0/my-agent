@@ -26,10 +26,10 @@ class TestToolRegistry:
 
         registry.register(my_tool, schema)
 
-        assert "my_tool" in registry.schemas
-        assert registry.schemas["my_tool"]["name"] == "my_tool"
-        assert registry.schemas["my_tool"]["description"] == "A test tool."
-        assert "my_tool" in registry.handlers
+        assert registry.get_schema("my_tool") is not None
+        assert registry.get_schema("my_tool")["name"] == "my_tool"  # type: ignore[index]
+        assert registry.get_schema("my_tool")["description"] == "A test tool."  # type: ignore[index]
+        assert registry.get_handler("my_tool") is not None
 
     def test_register_with_custom_name(self):
         """Test registering with a custom name and description."""
@@ -40,8 +40,9 @@ class TestToolRegistry:
 
         registry.register(func, {}, name="custom_name", description="Custom desc")
 
-        assert "custom_name" in registry.schemas
-        assert registry.schemas["custom_name"]["description"] == "Custom desc"
+        schema = registry.get_schema("custom_name")
+        assert schema is not None
+        assert schema["description"] == "Custom desc"
 
     @pytest.mark.asyncio
     async def test_handler_timeout(self):
@@ -54,7 +55,9 @@ class TestToolRegistry:
 
         registry.register(slow_tool, {})
 
-        result = await registry.handlers["slow_tool"]()
+        handler = registry.get_handler("slow_tool")
+        assert handler is not None
+        result = await handler()
         assert result["status"] == "error"
         assert "timed out" in result["message"]
 
@@ -68,7 +71,9 @@ class TestToolRegistry:
 
         registry.register(bad_tool, {})
 
-        result = await registry.handlers["bad_tool"]()
+        handler = registry.get_handler("bad_tool")
+        assert handler is not None
+        result = await handler()
         assert result["status"] == "error"
         assert "something broke" in result["message"]
 
@@ -82,6 +87,8 @@ class TestToolRegistry:
 
         registry.register(good_tool, {})
 
-        result = await registry.handlers["good_tool"](value="hello")
+        handler = registry.get_handler("good_tool")
+        assert handler is not None
+        result = await handler(value="hello")
         assert result["status"] == "success"
         assert result["value"] == "hello"

@@ -10,7 +10,6 @@ import logging
 import os
 
 from agent.api.server import ApiService, create_api_service
-from agent.core.event_logger import EventLogger
 from agent.core.messaging import create_messaging
 from agent.core.runtime import ContainerRuntime, HostRuntime
 from agent.core.settings import Settings
@@ -35,12 +34,6 @@ class AppWithDependencies:
     def __init__(self, settings: Settings):
         self.settings = settings
         self.event_queue: asyncio.Queue = asyncio.Queue()
-
-        # Event logger
-        self.event_logger = EventLogger(
-            event_url=self.settings.event_api_url,
-            event_api_key=self.settings.event_api_key,
-        )
 
         # Tool infrastructure
         self.runtime = (
@@ -70,7 +63,6 @@ class AppWithDependencies:
             self.settings.openai_model,
             self.tool_registry,
             self.messaging,
-            self.event_logger,
         )
         self.prompt_builder = SystemPromptBuilder(self.settings, self.skill_loader)
 
@@ -82,11 +74,10 @@ class AppWithDependencies:
         self._background_tasks: list[asyncio.Task] = []
 
     async def run(self) -> None:
-        """Start dependent background tasks (event logger, messaging, API server)."""
+        """Start dependent background tasks (messaging, API server)."""
         os.chdir(self.settings.cwd)
 
         self._background_tasks = [
-            asyncio.create_task(self.event_logger.run()),
             asyncio.create_task(self.messaging.run()),
             asyncio.create_task(self.api_service.run()),
         ]

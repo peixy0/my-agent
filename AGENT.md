@@ -15,12 +15,11 @@ The agent follows **SOLID principles** with emphasis on:
 ```
 AppWithDependencies (app.py)
   ├── Settings (configuration)
-  ├── EventLogger (remote logging)
   ├── ContainerRuntime (command execution)
   ├── ToolRegistry (tool management)
   ├── OpenAIProvider (OpenAI-compatible API)
   ├── Agent (conversation loop)
-  ├── Messaging (WeChat/Feishu/Null)
+  ├── Messaging (Feishu/Null)
   └── ApiService (FastAPI/Null)
 
 Scheduler (main.py)
@@ -40,7 +39,6 @@ class AppWithDependencies:
         # All dependencies created and wired here
         self.settings = settings or get_settings()
         self.event_queue = asyncio.Queue()
-        self.event_logger = EventLogger(...)
         self.runtime = ContainerRuntime(...)
         self.tool_registry = ToolRegistry(...)
         self.llm_client = LLMFactory.create(...)
@@ -51,7 +49,6 @@ class AppWithDependencies:
     async def run(self) -> None:
         """Start all background tasks."""
         self._background_tasks = [
-            asyncio.create_task(self.event_logger.run()),
             asyncio.create_task(self.messaging.run()),
             asyncio.create_task(self.api_service.run()),
         ]
@@ -305,9 +302,8 @@ agent/
 │   └── server.py           # ApiService abstraction + FastAPI
 ├── core/
 │   ├── events.py           # Event types (HeartbeatEvent, HumanInputEvent)
-│   ├── event_logger.py     # Remote event streaming
 │   ├── runtime.py          # Container command execution
-│   ├── messaging.py        # Messaging abstraction (WeChat, Feishu, Null)
+│   ├── messaging.py        # Messaging abstraction (Feishu, Null)
 │   └── settings.py         # Configuration (Pydantic)
 ├── llm/
 │   ├── agent.py            # Conversation loop

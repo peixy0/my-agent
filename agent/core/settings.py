@@ -37,10 +37,6 @@ class Settings(BaseSettings):
     context_max_tokens: int = 100000
     context_num_keep_last: int = 10
 
-    # Event streaming settings
-    event_api_url: str = ""
-    event_api_key: str = ""
-
     # Feishu settings
     feishu_app_id: str = ""
     feishu_app_secret: str = ""

@@ -17,8 +17,8 @@ class ToolRegistry:
     """
     Holds tool name -> (schema, handler) mappings.
 
-    Wraps each handler with timeout and error handling so the
-    Agent and OpenAIProvider don't have to.
+    Wraps each handler with timeout and error handling so callers
+    don't have to worry about it.
     """
 
     def __init__(self, tool_timeout: int = 60):
@@ -26,25 +26,16 @@ class ToolRegistry:
         self._schemas: dict[str, dict[str, Any]] = {}
         self._handlers: dict[str, Callable[..., Awaitable[Any]]] = {}
 
-    @property
-    def schemas(self) -> dict[str, dict[str, Any]]:
-        return dict(self._schemas)
-
-    @property
-    def handlers(self) -> dict[str, Callable[..., Awaitable[Any]]]:
-        return dict(self._handlers)
-
-    def wrap_tool(
+    def _wrap_tool(
         self, func: Callable[..., Awaitable[Any]], tool_name: str
     ) -> Callable[..., Awaitable[Any]]:
         """Wrap a tool with timeout and error handling."""
 
         async def wrapped_tool(**kwargs: Any) -> Any:
             try:
-                result = await asyncio.wait_for(
+                return await asyncio.wait_for(
                     func(**kwargs), timeout=self._tool_timeout
                 )
-                return result
             except asyncio.TimeoutError:
                 return {
                     "status": "error",
@@ -72,4 +63,21 @@ class ToolRegistry:
             "description": tool_description,
             "parameters": schema,
         }
-        self._handlers[tool_name] = self.wrap_tool(func, tool_name)
+        self._handlers[tool_name] = self._wrap_tool(func, tool_name)
+
+    def get_schema(self, tool_name: str) -> dict[str, Any] | None:
+        return self._schemas.get(tool_name)
+
+    def get_handler(self, tool_name: str) -> Callable[..., Awaitable[Any]] | None:
+        return self._handlers.get(tool_name)
+
+    def tool_schemas(self) -> list[dict[str, Any]]:
+        """Return all schemas formatted for the OpenAI tools API."""
+        return [{"type": "function", "function": fn} for fn in self._schemas.values()]
+
+    def clone(self) -> "ToolRegistry":
+        """Return a shallow copy with independent tool mappings."""
+        copy = ToolRegistry(self._tool_timeout)
+        copy._schemas = dict(self._schemas)
+        copy._handlers = dict(self._handlers)
+        return copy

@@ -15,10 +15,10 @@ from typing import Any, override
 
 import jsonschema
 
-from agent.core.event_logger import EventLogger
 from agent.core.messaging import Messaging
 from agent.llm.openai import OpenAIProvider
 from agent.tools.tool_registry import ToolRegistry
+from agent.tools.toolbox import register_human_input_tools
 
 logger = logging.getLogger(__name__)
 
@@ -39,30 +39,21 @@ class Orchestrator(ABC):
         model: str,
         tool_registry: ToolRegistry,
         messaging: Messaging,
-        event_logger: EventLogger,
     ):
         self.model = model
-        self.tool_registry = tool_registry
-        self.schemas = tool_registry.schemas
-        self.handlers = tool_registry.handlers
+        self.tool_registry = tool_registry.clone()
         self.messaging = messaging
-        self.event_logger = event_logger
 
-    def register_instance_tool(
+    def register_tool(
         self,
         func: Any,
         schema: dict[str, Any],
+        *,
+        name: str | None = None,
+        description: str | None = None,
     ) -> None:
         """Register a tool specific to this orchestrator instance."""
-        tool_name = func.__name__
-        tool_description = func.__doc__
-
-        self.schemas[tool_name] = {
-            "name": tool_name,
-            "description": tool_description,
-            "parameters": schema,
-        }
-        self.handlers[tool_name] = self.tool_registry.wrap_tool(func, tool_name)
+        self.tool_registry.register(func, schema, name=name, description=description)
 
     @abstractmethod
     async def _before_tool_use(self, message: Any) -> None:
@@ -80,28 +71,20 @@ class Orchestrator(ABC):
             tool_results = await asyncio.gather(
                 *[self._handle_tool_call(tc) for tc in message.tool_calls]
             )
-            reply: list[dict[str, Any]] = []
-            for tool_result in tool_results:
-                await self.event_logger.log_tool_use(
-                    tool_result.tool_name, tool_result.args, tool_result.result
-                )
-                reply.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tool_result.tool_id,
-                        "content": json.dumps(tool_result.result, ensure_ascii=False),
-                    }
-                )
+            reply: list[dict[str, Any]] = [
+                {
+                    "role": "tool",
+                    "tool_call_id": tool_result.tool_id,
+                    "content": json.dumps(tool_result.result, ensure_ascii=False),
+                }
+                for tool_result in tool_results
+            ]
             return reply
 
         if finish_reason != "stop":
             return [{"role": "user", "content": "continue"}]
 
-        content = message.content or ""
-        content = content.strip()
-        await self.event_logger.log_agent_response(
-            f"{self.response_label} Response:\n\n{message.content}"
-        )
+        content = (message.content or "").strip()
         await self._on_final_response(content)
         return []
 
@@ -109,7 +92,8 @@ class Orchestrator(ABC):
         tool_name = tool_call.function.name
         tool_id = tool_call.id
 
-        if tool_name not in self.handlers:
+        handler = self.tool_registry.get_handler(tool_name)
+        if handler is None:
             return ToolCallResult(
                 tool_id,
                 tool_name,
@@ -127,17 +111,11 @@ class Orchestrator(ABC):
         try:
             args = json.loads(tool_call.function.arguments)
             if self.model.startswith("deepseek-ai/"):
-                for arg_name, arg_value in args.items():
-                    try:
-                        arg_value_parsed = json.loads(arg_value)
-                        args[arg_name] = arg_value_parsed
-                    except json.JSONDecodeError:
-                        pass
-            jsonschema.validate(
-                instance=args,
-                schema=self.schemas[tool_name]["parameters"],
-            )
-            result: dict[str, Any] = await self.handlers[tool_name](**args)
+                args = self._fix_deepseek_args(args)
+            schema = self.tool_registry.get_schema(tool_name)
+            if schema:
+                jsonschema.validate(instance=args, schema=schema["parameters"])
+            result: dict[str, Any] = await handler(**args)
         except json.JSONDecodeError as e:
             result = {
                 "status": "error",
@@ -160,6 +138,20 @@ class Orchestrator(ABC):
             logger.debug(f"Tool call {tool_name} completed successfully")
 
         return ToolCallResult(tool_id, tool_name, args, result)
+
+    @staticmethod
+    def _fix_deepseek_args(args: dict[str, Any]) -> dict[str, Any]:
+        """DeepSeek sometimes double-encodes argument values as JSON strings."""
+        fixed: dict[str, Any] = {}
+        for key, value in args.items():
+            if isinstance(value, str):
+                try:
+                    fixed[key] = json.loads(value)
+                except json.JSONDecodeError:
+                    fixed[key] = value
+            else:
+                fixed[key] = value
+        return fixed
 
 
 class HeartbeatOrchestrator(Orchestrator):
@@ -185,81 +177,11 @@ class HumanInputOrchestrator(Orchestrator):
         model: str,
         tool_registry: ToolRegistry,
         messaging: Messaging,
-        event_logger: EventLogger,
     ):
-        super().__init__(model, tool_registry, messaging, event_logger)
+        super().__init__(model, tool_registry, messaging)
         self.chat_id = chat_id
         self.message_id = message_id
-        self._register_tools()
-
-    def _register_tools(self) -> None:
-        async def add_reaction(emoji: str) -> dict[str, Any]:
-            """
-            React to the current message with an emoji.
-            """
-            try:
-                await self.messaging.add_reaction(self.message_id, emoji)
-                return {
-                    "status": "success",
-                    "message": f"Added reaction {emoji} to message",
-                }
-            except Exception as e:
-                logger.error(f"Failed to add reaction {emoji}: {e}", exc_info=True)
-                return {"status": "error", "message": str(e)}
-
-        self.register_instance_tool(
-            add_reaction,
-            {
-                "type": "object",
-                "properties": {
-                    "emoji": {
-                        "type": "string",
-                        "enum": [
-                            "OK",
-                            "THUMBSUP",
-                            "MUSCLE",
-                            "LOL",
-                            "THINKING",
-                            "Shrug",
-                            "Fire",
-                            "Coffee",
-                            "PARTY",
-                            "CAKE",
-                            "HEART",
-                        ],
-                        "description": "The emoji type to react with. OK, THUMBSUP, MUSCLE, LOL, THINKING, Shrug, Fire, Coffee, PARTY, CAKE, HEART",
-                    }
-                },
-                "required": ["emoji"],
-            },
-        )
-
-        async def send_image(image_path: str) -> dict[str, Any]:
-            """
-            Send an image file to the user. Image file size must be under 10 MiB.
-            """
-            try:
-                await self.messaging.send_image(self.chat_id, image_path)
-                return {
-                    "status": "success",
-                    "message": f"Sent image {image_path} to user",
-                }
-            except Exception as e:
-                return {"status": "error", "message": str(e)}
-
-        self.register_instance_tool(
-            send_image,
-            {
-                "type": "object",
-                "properties": {
-                    "image_path": {
-                        "type": "string",
-                        "description": "Absolute path to the image file to send.",
-                    }
-                },
-                "required": ["image_path"],
-            },
-        )
+        register_human_input_tools(self.tool_registry, messaging, chat_id, message_id)
 
     @override
     async def _before_tool_use(self, message: Any) -> None:
@@ -287,13 +209,11 @@ class Agent:
         model: str,
         tool_registry: ToolRegistry,
         messaging: Messaging,
-        event_logger: EventLogger,
     ):
         self.llm_client = llm_client
         self.model = model
         self.tool_registry = tool_registry
         self.messaging = messaging
-        self.event_logger = event_logger
         self.system_messages = []
         self.system_prompt = ""
 
@@ -312,14 +232,11 @@ class Agent:
 
         Args:
             messages: A list of messages in the chat history.
-            max_iterations: The maximum number of tool call iterations to perform.
+            orchestrator: The orchestrator handling tool dispatch and responses.
 
         Returns:
             The LLM's response.
         """
-        # Use orchestrator's schemas (includes instance tools)
-        schemas = orchestrator.schemas
-
         while True:
             messages_to_be_sent = self.system_messages.copy()
             messages_to_be_sent.extend(messages)
@@ -327,7 +244,7 @@ class Agent:
             response = await self.llm_client.do_completion(
                 model=self.model,
                 messages=messages_to_be_sent,
-                tools=[{"type": "function", "function": fn} for fn in schemas.values()],
+                tools=orchestrator.tool_registry.tool_schemas(),
                 temperature=1.0,
                 top_p=1.0,
                 tool_choice="auto",

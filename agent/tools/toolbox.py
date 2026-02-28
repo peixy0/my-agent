@@ -5,15 +5,19 @@ All file and command operations are delegated to the Runtime,
 which executes them inside the workspace container.
 """
 
+import logging
 from typing import Any, cast
 
 import trafilatura
 from ddgs import DDGS
 
+from agent.core.messaging import Messaging
 from agent.core.runtime import Runtime
 from agent.core.settings import Settings
 from agent.tools.skill_loader import SkillLoader
 from agent.tools.tool_registry import ToolRegistry
+
+logger = logging.getLogger(__name__)
 
 
 def register_default_tools(
@@ -235,5 +239,82 @@ def register_default_tools(
                 }
             },
             "required": ["skill_name"],
+        },
+    )
+
+
+def register_human_input_tools(
+    registry: ToolRegistry,
+    messaging: Messaging,
+    chat_id: str,
+    message_id: str,
+) -> None:
+    """Register tools that are only available during human-input interactions."""
+
+    async def add_reaction(emoji: str) -> dict[str, Any]:
+        """
+        React to the current message with an emoji.
+        """
+        try:
+            await messaging.add_reaction(message_id, emoji)
+            return {
+                "status": "success",
+                "message": f"Added reaction {emoji} to message",
+            }
+        except Exception as e:
+            logger.error(f"Failed to add reaction {emoji}: {e}", exc_info=True)
+            return {"status": "error", "message": str(e)}
+
+    registry.register(
+        add_reaction,
+        {
+            "type": "object",
+            "properties": {
+                "emoji": {
+                    "type": "string",
+                    "enum": [
+                        "OK",
+                        "THUMBSUP",
+                        "MUSCLE",
+                        "LOL",
+                        "THINKING",
+                        "Shrug",
+                        "Fire",
+                        "Coffee",
+                        "PARTY",
+                        "CAKE",
+                        "HEART",
+                    ],
+                    "description": "The emoji type to react with. OK, THUMBSUP, MUSCLE, LOL, THINKING, Shrug, Fire, Coffee, PARTY, CAKE, HEART",
+                }
+            },
+            "required": ["emoji"],
+        },
+    )
+
+    async def send_image(image_path: str) -> dict[str, Any]:
+        """
+        Send an image file to the user. Image file size must be under 10 MiB.
+        """
+        try:
+            await messaging.send_image(chat_id, image_path)
+            return {
+                "status": "success",
+                "message": f"Sent image {image_path} to user",
+            }
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    registry.register(
+        send_image,
+        {
+            "type": "object",
+            "properties": {
+                "image_path": {
+                    "type": "string",
+                    "description": "Absolute path to the image file to send.",
+                }
+            },
+            "required": ["image_path"],
         },
     )

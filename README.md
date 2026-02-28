@@ -1,15 +1,14 @@
 # Autonomous LLM Agent
 
-A system-level autonomous LLM agent that runs continuously on your host machine, using an isolated container workspace for safe command execution. The agent can work autonomously on scheduled tasks, respond to human input via HTTP API, and send notifications through WeChat Work or Feishu.
+A system-level autonomous LLM agent that runs continuously on your host machine, using an isolated container workspace for safe command execution. The agent can work autonomously on scheduled tasks, respond to human input via HTTP API, and send notifications through Feishu.
 
 ## Key Features
 
 - **Autonomous Mode**: Wakes up periodically to work on tasks, maintains context across sessions
 - **Container Isolation**: All commands execute safely in a containerized workspace
 - **HTTP API**: Accept human input via REST endpoint for interactive conversations
-- **Messaging Integration**: Send notifications via WeChat Work (企业微信) or Feishu (飞书)
+- **Messaging Integration**: Send notifications via Feishu (飞书)
 - **Extensible Skills**: Add custom skills as Markdown files to extend agent capabilities
-- **Event Logging**: Optional remote event streaming for monitoring and debugging
 
 ## Quick Start
 
@@ -74,21 +73,11 @@ API_ENABLED=true
 API_HOST=0.0.0.0
 API_PORT=8000
 
-# WeChat Work Integration (Optional)
-WECHAT_CORPID=your_corp_id
-WECHAT_CORPSECRET=your_corp_secret
-WECHAT_AGENTID=your_agent_id
-WECHAT_TOUSER=@all
-
 # Feishu Integration (Optional)
 FEISHU_APP_ID=your_app_id
 FEISHU_APP_SECRET=your_app_secret
 FEISHU_ENCRYPT_KEY=your_encrypt_key
 FEISHU_VERIFICATION_TOKEN=your_verification_token
-
-# Event Logging (Optional)
-EVENT_API_URL=https://your-event-api.com/events
-EVENT_API_KEY=your_event_api_key
 ```
 
 ### HTTP API
@@ -106,11 +95,6 @@ curl http://localhost:8000/api/health
 ```
 
 ### Messaging Integrations
-
-**WeChat Work (企业微信)**:
-1. Get credentials from WeChat Work admin panel
-2. Add `WECHAT_*` variables to `.env`
-3. Agent can send notifications automatically
 
 **Feishu (飞书)**:
 1. Create a Feishu app and get credentials
@@ -141,7 +125,6 @@ workspace/
 | `edit_file` | Edit file content |
 | `web_search` | Search the web |
 | `fetch` | Fetch web pages |
-| `发送应用消息` | Send WeChat Work message |
 | `use_skill` | Load skill instructions |
 
 ## Skills
