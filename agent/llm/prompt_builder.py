@@ -19,7 +19,7 @@ class SystemPromptBuilder:
         self._settings = settings
         self._skill_loader = skill_loader
 
-    def build(self, previous_summary: str = "") -> str:
+    def build(self) -> str:
         """Build the full system prompt with current datetime and skills."""
         operating_system = platform.system()
         bootstrap_files = ["IDENTITY.md", "USER.md", "MEMORY.md", "CONTEXT.md"]
@@ -42,15 +42,6 @@ class SystemPromptBuilder:
                 skills_text += f"- {s.name}: {s.description}\n"
             skills_text += "\nUse the `use_skill` tool for detailed instructions."
 
-        summary_section = ""
-        if previous_summary:
-            summary_section = f"""# Conversation Summary
-
-The following is a compressed summary of the conversation history so far:
-
-{previous_summary}
-"""
-
         return f"""
 You are an autonomous agent acting as a personal assistant.
 
@@ -70,14 +61,33 @@ Your working directory is `/workspace`.
 Treat this directory as the single global workspace for file operations unless explicitly instructed otherwise.
 
 {bootstrap_context}
+"""
+
+    def build_with_previous_summary(self, previous_summary: str) -> str:
+        default_prompt = self.build()
+        summary_section = ""
+        if previous_summary:
+            summary_section = f"""# Conversation Summary
+
+The following is a compressed summary of the conversation history so far:
+
+{previous_summary}
+"""
+        return f"""{default_prompt}
 
 {summary_section}
+"""
+
+    def build_for_heartbeat(self) -> str:
+        default_prompt = self.build()
+        return f"""{default_prompt}
 
 # Silent Replies
 
 If you are woken up because of a heartbeat, and there is nothing that needs attention, respond with content ends with: NO_REPORT
 
 Rules:
+- Use NO_REPORT only during system events
 - System treats response ending with NO_REPORT as "no need to report" and will not send it to human user.
 - NO_REPORT must be at the end
 - Never append it to an actual response (never include NO_REPORT in real replies)

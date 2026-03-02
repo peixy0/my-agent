@@ -63,7 +63,7 @@ class Scheduler:
 
     async def _process_heartbeat(self) -> None:
         logger.info("Executing agent heartbeat cycle")
-        prompt = self.app.prompt_builder.build()
+        prompt = self.app.prompt_builder.build_for_heartbeat()
         now = datetime.now().astimezone()
         current_datetime = now.strftime("%Y-%m-%d %H:%M:%S %Z%z")
         messages = [
@@ -154,7 +154,9 @@ Timezone: {now.tzinfo}
         )
         logger.info(f"Processing human input: {event.message[:100]}...")
 
-        prompt = self.app.prompt_builder.build(conversation.previous_summary)
+        prompt = self.app.prompt_builder.build_with_previous_summary(
+            conversation.previous_summary
+        )
         orchestrator = HumanInputOrchestrator(
             event.chat_id,
             event.message_id,
