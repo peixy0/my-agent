@@ -127,3 +127,75 @@ async def test_compress_skips_messages_without_content() -> None:
     # None / empty content should not appear as literal "None" or blank entries
     assert "[ASSISTANT]\nNone" not in user_content
     assert "[TOOL]\n" not in user_content
+
+
+@pytest.mark.asyncio
+async def test_compress_includes_previous_summary_in_transcript() -> None:
+    """compress() should prepend the previous summary so compression is incremental."""
+    agent = _make_agent()
+    agent.llm_client.do_completion = AsyncMock(
+        return_value=_make_completion_response("new summary")
+    )
+
+    messages = [{"role": "user", "content": "follow-up question"}]
+    prior = "Agent previously set up the database."
+
+    await agent.compress(messages, previous_summary=prior)
+
+    user_content = agent.llm_client.do_completion.call_args.kwargs["messages"][1][
+        "content"
+    ]
+    assert prior in user_content
+    assert "follow-up question" in user_content
+
+
+@pytest.mark.asyncio
+async def test_compress_pairs_tool_call_with_result() -> None:
+    """compress() should emit a single TOOL line with call and result paired."""
+    agent = _make_agent()
+    agent.llm_client.do_completion = AsyncMock(
+        return_value=_make_completion_response("summary")
+    )
+
+    messages = [
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "tc_1",
+                    "function": {
+                        "name": "run_command",
+                        "arguments": '{"command": "ls /workspace"}',
+                    },
+                }
+            ],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "tc_1",
+            "content": "README.md\nmain.py",
+        },
+    ]
+
+    await agent.compress(messages)
+
+    user_content = agent.llm_client.do_completion.call_args.kwargs["messages"][1][
+        "content"
+    ]
+    # Tool call and its result should appear together
+    assert "run_command" in user_content
+    assert "README.md" in user_content
+    # The paired result should not appear again as a standalone TOOL RESULT
+    assert user_content.count("README.md") == 1
+
+
+@pytest.mark.asyncio
+async def test_compress_no_llm_call_when_empty_after_keep() -> None:
+    """compress() with an empty list never calls the LLM."""
+    agent = _make_agent()
+    agent.llm_client.do_completion = AsyncMock()
+
+    await agent.compress([])
+
+    agent.llm_client.do_completion.assert_not_called()

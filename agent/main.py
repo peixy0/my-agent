@@ -83,15 +83,32 @@ SYSTEM EVENT: Heartbeat""",
         logger.info("Heartbeat cycle completed")
 
     async def _compress_conversation(self, conversation: Conversation) -> None:
-        """Compress all conversation messages into a summary stored in the system prompt."""
-        logger.info("Compressing conversation context")
+        """
+        Compress old messages into a structured summary, retaining the recent tail.
+
+        The last context_num_keep_last messages are kept verbatim so the agent
+        retains immediate context.  The prior summary is passed to compress() so
+        each compression is incremental — earlier history is never silently lost.
+        """
+        keep_last = self.app.settings.context_num_keep_last
+        if keep_last > 0 and len(conversation.messages) > keep_last:
+            to_summarize = conversation.messages[:-keep_last]
+            retained = conversation.messages[-keep_last:]
+        else:
+            to_summarize = conversation.messages
+            retained = []
+
+        logger.info(
+            f"Compressing {len(to_summarize)} messages, retaining {len(retained)}"
+        )
         await self.app.messaging.send_message(
-            conversation.chat_id, "Max token reached, compressing conversation"
+            conversation.chat_id, "Context window full, compressing conversation…"
         )
         conversation.previous_summary = await self.app.agent.compress(
-            conversation.messages
+            to_summarize,
+            previous_summary=conversation.previous_summary,
         )
-        conversation.messages = []
+        conversation.messages = retained
         conversation.total_tokens = 0
         await self.app.messaging.send_message(
             conversation.chat_id, "Conversation compressed"
@@ -108,19 +125,6 @@ SYSTEM EVENT: Heartbeat""",
                 event.chat_id, "New heartbeat started"
             )
             return
-        if event.message == "/compress":
-            conversation = self.conversations.get(
-                event.chat_id, Conversation(event.chat_id)
-            )
-            if conversation.total_tokens < self.app.settings.context_max_tokens:
-                await self.app.messaging.send_message(
-                    event.chat_id,
-                    f"No need to compress, total tokens: {conversation.total_tokens}",
-                )
-                return
-            await self._compress_conversation(conversation)
-            self.conversations[event.chat_id] = conversation
-            return
 
         conversation = self.conversations.get(
             event.chat_id, Conversation(event.chat_id)
@@ -129,6 +133,13 @@ SYSTEM EVENT: Heartbeat""",
             logger.debug(f"Ignoring duplicated message {event.message_id}")
             return
         conversation.message_ids.add(event.message_id)
+
+        if (
+            self.app.settings.enable_compression
+            and conversation.messages
+            and conversation.total_tokens >= self.app.settings.context_max_tokens
+        ):
+            await self._compress_conversation(conversation)
 
         now = datetime.now().astimezone()
         current_datetime = now.strftime("%Y-%m-%d %H:%M:%S %Z%z")
