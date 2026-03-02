@@ -47,8 +47,8 @@ This document specifies a system-level autonomous LLM agent. The agent runs on t
 
 ### AppWithDependencies (`agent/app.py`)
 - **Composition root** — single place where all dependencies are wired
-- Creates: Settings → EventLogger → runtime → ToolRegistry → OpenAIProvider → Agent → Messaging → ApiService
-- `run()` method starts all background tasks (event logger, messaging, API server)
+- Creates: Settings → runtime → ToolRegistry → OpenAIProvider → Agent → Messaging → ApiService
+- `run()` method starts all background tasks (messaging, API server)
 - Replaces scattered module-level singletons with explicit construction
 
 ### Agent (`agent/llm/agent.py`)
@@ -76,15 +76,9 @@ This document specifies a system-level autonomous LLM agent. The agent runs on t
 - All file operations (read/write/edit) also execute in container
 - Dependency injection enables testing
 
-### Event Logger (`agent/core/event_logger.py`)
-- Logs tool usage and LLM responses
-- Optional remote streaming to external API
-- Instantiated in composition root, not as module-level singleton
-
 ### Scheduler (`agent/main.py`)
 - Event-driven loop processing `HeartbeatEvent` and `HumanInputEvent`
 - Dispatches to appropriate handler based on event type
-- Container lifecycle management
 
 ### ApiService (`agent/api/server.py`)
 - `ApiService` ABC with `NullApiService` and `UvicornApiService` implementations
@@ -94,8 +88,8 @@ This document specifies a system-level autonomous LLM agent. The agent runs on t
 - Shares `asyncio.Queue` with Scheduler for event delivery
 
 ### Messaging (`agent/core/messaging.py`)
-- `Messaging` ABC with `NullMessaging` and `WXMessaging` implementations
-- `WXMessaging` accepts explicit `WXMessagingConfig` (DIP — no global settings)
+- `Messaging` ABC with `NullMessaging` and `FeishuMessaging` implementations
+- `FeishuMessaging` accepts explicit `FeishuMessagingConfig` (DIP — no global settings)
 
 ## 4. Tools
 
@@ -151,13 +145,11 @@ sys-agent/
 │   │   └── server.py          # ApiService ABC + FastAPI endpoints
 │   ├── core/
 │   │   ├── events.py          # Event types
-│   │   ├── event_logger.py    # Event logging
 │   │   ├── runtime.py         # Command runtime
 │   │   ├── messaging.py       # Messaging ABC + implementations
 │   │   └── settings.py        # Configuration
 │   ├── llm/
 │   │   ├── agent.py           # Agent conversation loop
-│   │   ├── base.py            # Abstract LLM client
 │   │   ├── factory.py         # Client factory
 │   │   ├── openai.py          # OpenAI implementation
 │   │   └── prompt_builder.py  # System prompt construction
@@ -168,10 +160,11 @@ sys-agent/
 │   ├── app.py                # Composition root (DI)
 │   └── main.py               # Entry point + Scheduler
 ├── tests/
-│   ├── test_api.py           # API endpoint tests
-│   ├── test_runtime.py
-│   ├── test_skill_loader.py
-│   └── test_tool_registry.py # ToolRegistry tests
+│   ├── test_api.py               # API endpoint tests
+│   ├── test_agent_compress.py    # Agent compress() tests
+│   ├── test_command_executor.py  # Runtime execution tests
+│   ├── test_skill_loader.py      # SkillLoader tests
+│   └── test_tool_registry.py     # ToolRegistry tests
 ├── workspace/                # Persisted workspace
 ├── Containerfile             # Workspace container image
 └── run-container.sh          # Container management
@@ -192,7 +185,7 @@ Accept human input for agent processing.
 
 **Request:**
 ```json
-{"message": "Your message to the agent"}
+{"chat_id": "<chat_id>", "message_id": "<message_id>", "message": "Your message to the agent"}
 ```
 
 **Response:**

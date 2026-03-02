@@ -227,10 +227,7 @@ class ContainerRuntime(Runtime):
         Edit a file by replacing specific blocks of text.
         """
         content_bytes = await self.read_file_internal(filename)
-        if content_bytes is None:
-            return {"status": "error", "message": "Failed to read file"}
         content = content_bytes.decode("utf-8", errors="replace")
-        content.splitlines(keepends=True)
 
         for edit in edits:
             search_block = edit["search"]

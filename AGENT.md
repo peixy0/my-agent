@@ -65,22 +65,23 @@ class AppWithDependencies:
 
 Tools are registered in `agent/tools/toolbox.py`. The `ToolRegistry` follows the **Open/Closed Principle**—add new tools without modifying existing code.
 
-**Step 1**: Implement the tool handler
+**Step 1**: Implement the tool handler inside `register_default_tools()`. The function's docstring becomes the tool description; the function name becomes the tool name.
 ```python
-async def my_tool_handler(param1: str, param2: int) -> dict:
-    """Your tool implementation."""
+async def my_tool_handler(param1: str, param2: int) -> dict[str, Any]:
+    """
+    What this tool does — used directly as the description sent to the LLM.
+    """
     result = await do_something(param1, param2)
     return {"result": result}
 ```
 
-**Step 2**: Define the JSON schema
+**Step 2**: Register in `register_default_tools()` by passing the function and its **parameters** schema (not a full `{"type": "function", ...}` wrapper):
 ```python
-MY_TOOL_SCHEMA = {
-    "type": "function",
-    "function": {
-        "name": "my_tool",
-        "description": "What this tool does",
-        "parameters": {
+def register_default_tools(registry: ToolRegistry, runtime, skill_loader, settings):
+    # ... existing tools ...
+    registry.register(
+        my_tool_handler,
+        {
             "type": "object",
             "properties": {
                 "param1": {"type": "string", "description": "..."},
@@ -88,15 +89,12 @@ MY_TOOL_SCHEMA = {
             },
             "required": ["param1", "param2"],
         },
-    },
-}
+    )
 ```
 
-**Step 3**: Register in `register_default_tools()`
+Use the optional `name=` and `description=` keyword arguments to override the function name or docstring:
 ```python
-def register_default_tools(registry: ToolRegistry, runtime, skill_loader):
-    # ... existing tools ...
-    registry.register("my_tool", my_tool_handler, MY_TOOL_SCHEMA)
+registry.register(my_tool_handler, schema, name="my_tool", description="Override description")
 ```
 
 ### 2. Adding New Messaging Backends
@@ -218,8 +216,13 @@ while self.running:
 ```python
 def test_tool_registry():
     registry = ToolRegistry(tool_timeout=10)
-    registry.register("test_tool", handler, schema)
-    assert "test_tool" in registry.list_tools()
+
+    async def handler() -> dict:
+        """test tool"""
+        return {}
+
+    registry.register(handler, {"type": "object", "properties": {}, "required": []})
+    assert registry.get_handler("handler") is not None
 ```
 
 ### Integration Tests

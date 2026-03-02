@@ -11,7 +11,7 @@ import json
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, override
+from typing import Any, cast, override
 
 import jsonschema
 
@@ -300,12 +300,21 @@ class Agent:
             "Write in third-person past tense. Be dense — omit pleasantries."
         )
 
-        # Serialize messages as a readable transcript for the LLM
+        # Serialize messages as a readable transcript for the LLM.
+        # Handles all message roles: user, assistant (with or without tool_calls), tool.
         transcript_parts: list[str] = []
         for msg in messages:
             role = msg.get("role", "unknown")
-            content = msg.get("content", "")
-            if content:
+            content = msg.get("content") or ""
+            tool_calls = msg.get("tool_calls")
+            if tool_calls:
+                for tc in cast(list[dict[str, Any]], tool_calls):
+                    name = tc.get("function", {}).get("name", "unknown")
+                    args = tc.get("function", {}).get("arguments", "")[:200]
+                    transcript_parts.append(f"[TOOL CALL] {name}({args})")
+            elif role == "tool":
+                transcript_parts.append(f"[TOOL RESULT]\n{content[:500]}")
+            elif content:
                 transcript_parts.append(f"[{role.upper()}]\n{content}")
 
         transcript = "\n\n".join(transcript_parts)
