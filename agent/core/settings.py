@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     wake_interval_seconds: int = 1800  # 30 minutes
 
     # Context compression settings
-    enable_compression: bool = False
+    enable_context_auto_compression: bool = False
     context_max_tokens: int = 100000
     context_num_keep_last: int = 10
 

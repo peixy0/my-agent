@@ -135,7 +135,7 @@ SYSTEM EVENT: Heartbeat""",
         conversation.message_ids.add(event.message_id)
 
         if (
-            self.app.settings.enable_compression
+            self.app.settings.enable_context_auto_compression
             and conversation.messages
             and conversation.total_tokens >= self.app.settings.context_max_tokens
         ):
