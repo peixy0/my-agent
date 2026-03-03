@@ -24,6 +24,7 @@ class OpenAIProvider:
             base_url=url,
             api_key=api_key,
             http_client=http_client,
+            timeout=600,
         )
 
     @retry(
