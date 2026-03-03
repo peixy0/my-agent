@@ -91,7 +91,9 @@ def create_api(event_queue: asyncio.Queue, messaging_bus: MessagingBus) -> FastA
     def _load_chat_html() -> str:
         nonlocal _chat_html
         if _chat_html is None:
-            html_path = Path.cwd() / ".assets" / "test_chat.html"
+            html_path = (
+                Path(__file__).parent.parent.parent / "assets" / "test_chat.html"
+            )
             _chat_html = html_path.read_text(encoding="utf-8")
         return _chat_html
 
