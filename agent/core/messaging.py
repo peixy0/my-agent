@@ -1,4 +1,4 @@
-# pyright: reportOptionalMemberAccess=false
+# pyright: reportOptionalMemberAccess=false, reportAttributeAccessIssue=false
 
 import asyncio
 import io
@@ -64,6 +64,85 @@ class NullMessaging(Messaging):
 
     async def send_image(self, chat_id: str, image_path: str) -> None:
         pass
+
+
+class WebSocketMessaging(Messaging):
+    """Messaging backend for a single connected WebSocket client."""
+
+    def __init__(self, websocket: object, chat_id: str) -> None:
+        self._ws = websocket
+        self._chat_id = chat_id
+
+    async def run(self) -> None:
+        pass
+
+    async def notify(self, message: str) -> None:
+        await self.send_message(self._chat_id, message)
+
+    async def send_message(self, chat_id: str, message: str) -> None:
+        try:
+            await self._ws.send_json(  # type: ignore[union-attr]
+                {"type": "message", "chat_id": chat_id, "text": message}
+            )
+        except Exception as e:
+            logger.warning(f"WebSocket send failed for {chat_id}: {e}")
+
+    async def add_reaction(self, message_id: str, emoji_type: str) -> None:
+        pass  # reactions not applicable to WebSocket
+
+    async def send_image(self, chat_id: str, image_path: str) -> None:
+        try:
+            await self._ws.send_json(  # type: ignore[union-attr]
+                {"type": "image_path", "chat_id": chat_id, "path": image_path}
+            )
+        except Exception as e:
+            logger.warning(f"WebSocket image send failed for {chat_id}: {e}")
+
+
+class MessagingBus(Messaging):
+    """
+    Routes outgoing messages to the correct Messaging backend based on chat_id.
+
+    Rules (in priority order):
+      1. Exact chat_id match registered via ``register()`` (e.g. live WebSocket sessions).
+      2. Fall through to the *default* backend (e.g. FeishuMessaging or NullMessaging).
+
+    The default backend also handles ``notify()`` and ``add_reaction()`` since those
+    operations are not tied to a specific chat_id originating from a WebSocket client.
+    """
+
+    def __init__(self, default: Messaging) -> None:
+        self._default = default
+        self._routes: dict[str, Messaging] = {}
+
+    def register(self, chat_id: str, messaging: Messaging) -> None:
+        """Register a Messaging backend for a specific chat_id."""
+        self._routes[chat_id] = messaging
+        logger.debug(f"MessagingBus: registered route for chat_id={chat_id!r}")
+
+    def unregister(self, chat_id: str) -> None:
+        """Remove the registered backend for chat_id (e.g. on WebSocket disconnect)."""
+        self._routes.pop(chat_id, None)
+        logger.debug(f"MessagingBus: unregistered route for chat_id={chat_id!r}")
+
+    def _resolve(self, chat_id: str) -> Messaging:
+        return self._routes.get(chat_id, self._default)
+
+    async def run(self) -> None:
+        await self._default.run()
+
+    async def notify(self, message: str) -> None:
+        await self._default.notify(message)
+
+    async def send_message(self, chat_id: str, message: str) -> None:
+        await self._resolve(chat_id).send_message(chat_id, message)
+
+    async def add_reaction(self, message_id: str, emoji_type: str) -> None:
+        # Reactions are only meaningful on backends that support them (e.g. Feishu).
+        await self._default.add_reaction(message_id, emoji_type)
+
+    async def send_image(self, chat_id: str, image_path: str) -> None:
+        await self._resolve(chat_id).send_image(chat_id, image_path)
 
 
 @dataclass(frozen=True)
@@ -330,8 +409,8 @@ class FeishuMessaging(Messaging):
 
 def create_messaging(
     settings: Settings, event_queue: asyncio.Queue, runtime: Runtime
-) -> Messaging:
-    """Create the appropriate messaging backend."""
+) -> MessagingBus:
+    """Create a MessagingBus with the appropriate default backend."""
     if settings.feishu_app_id and settings.feishu_app_secret:
         config = FeishuMessagingConfig(
             app_id=settings.feishu_app_id,
@@ -340,5 +419,5 @@ def create_messaging(
             verification_token=settings.feishu_verification_token,
             notify_chat_id=settings.feishu_notify_chat_id,
         )
-        return FeishuMessaging(config, event_queue, runtime)
-    return NullMessaging()
+        return MessagingBus(default=FeishuMessaging(config, event_queue, runtime))
+    return MessagingBus(default=NullMessaging())

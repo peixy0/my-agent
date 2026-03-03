@@ -10,7 +10,7 @@ import logging
 import os
 
 from agent.api.server import ApiService, create_api_service
-from agent.core.messaging import create_messaging
+from agent.core.messaging import MessagingBus, create_messaging
 from agent.core.runtime import ContainerRuntime, HostRuntime
 from agent.core.settings import Settings
 from agent.llm.agent import Agent
@@ -48,7 +48,9 @@ class AppWithDependencies:
         self.tool_registry = ToolRegistry(
             tool_timeout=self.settings.tool_timeout,
         )
-        self.messaging = create_messaging(self.settings, self.event_queue, self.runtime)
+        self.messaging: MessagingBus = create_messaging(
+            self.settings, self.event_queue, self.runtime
+        )
         register_default_tools(
             self.tool_registry, self.runtime, self.skill_loader, self.settings
         )
@@ -68,7 +70,7 @@ class AppWithDependencies:
 
         # API Service
         self.api_service: ApiService = create_api_service(
-            self.settings, self.event_queue
+            self.settings, self.event_queue, self.messaging
         )
 
         self._background_tasks: list[asyncio.Task] = []

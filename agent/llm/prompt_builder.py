@@ -27,7 +27,9 @@ class SystemPromptBuilder:
         bootstrap_context = ""
         for filename in bootstrap_files:
             try:
-                with Path(f"{self._settings.workspace_dir}/{filename}").open() as f:
+                with Path(f"{self._settings.workspace_dir}/{filename}").open(
+                    encoding="utf-8"
+                ) as f:
                     content = f.read()
                     if content:
                         bootstrap_context += f"# {filename}\n\n{content}\n\n"

@@ -5,12 +5,16 @@ Runs the Scheduler (event loop) and FastAPI server concurrently.
 """
 
 import asyncio
+import base64
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Final
+from typing import Any, Final
 
-import uvloop
+try:
+    import uvloop  # type: ignore[import]
+except ImportError:  # pragma: no cover
+    uvloop = None  # type: ignore[assignment]
 
 from agent.app import AppWithDependencies
 from agent.core.events import HeartbeatEvent, ImageInputEvent, TextInputEvent
@@ -25,7 +29,7 @@ AgentEvent = HeartbeatEvent | TextInputEvent | ImageInputEvent
 @dataclass
 class Conversation:
     chat_id: str
-    messages: list[dict[str, str]]
+    messages: list[dict[str, Any]]
     message_ids: set[str]
     total_tokens: int
     previous_summary: str
@@ -57,6 +61,8 @@ class Scheduler:
         self.conversations = {}
 
     async def _schedule_heartbeat(self) -> None:
+        if self.app.settings.wake_interval_seconds <= 0:
+            return
         logger.info(f"Sleeping for {self.app.settings.wake_interval_seconds} seconds")
         await asyncio.sleep(self.app.settings.wake_interval_seconds)
         await self.app.event_queue.put(HeartbeatEvent())
@@ -192,8 +198,6 @@ Timezone: {now.tzinfo}
         ):
             await self._compress_conversation(conversation)
 
-        import base64
-
         now = datetime.now().astimezone()
         current_datetime = now.strftime("%Y-%m-%d %H:%M:%S %Z%z")
         image_b64 = base64.b64encode(event.image_data).decode()
@@ -203,18 +207,23 @@ Timezone: {now.tzinfo}
                 "content": [
                     {
                         "type": "text",
-                        "text": f"Message Time: {current_datetime}\nTimezone: {now.tzinfo}",
+                        "text": f"""Message Time: {current_datetime}
+Timezone: {now.tzinfo}
+
+{event.message}
+""",
                     },
                     {
                         "type": "image_url",
                         "image_url": {
-                            "url": f"data:{event.mime_type};base64,{image_b64}"
+                            "url": f"data:{event.mime_type};base64,{image_b64}",
+                            "detail": "auto",
                         },
                     },
                 ],
             }
         )
-        logger.info("Processing image input from Feishu")
+        logger.info("Processing image input")
 
         prompt = self.app.prompt_builder.build_with_previous_summary(
             conversation.previous_summary
@@ -285,4 +294,7 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    uvloop.run(main())
+    if uvloop is not None:
+        uvloop.run(main())
+    else:
+        asyncio.run(main())

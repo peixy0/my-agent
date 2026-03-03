@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agent Chat</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f0f2f5;
+      display: flex;
+      flex-direction: column;
+      height: 100dvh;
+      color: #1a1a2e;
+    }
+
+    /* === Header === */
+    header {
+      background: #1a1a2e;
+      color: #fff;
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    header h1 { font-size: 1.1rem; font-weight: 600; }
+    #status-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: #888;
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+    #status-dot.connected    { background: #4caf50; }
+    #status-dot.connecting   { background: #ff9800; }
+    #status-dot.disconnected { background: #f44336; }
+    #status-text { font-size: 0.78rem; color: #bbb; margin-left: auto; }
+    #chat-id-label { font-size: 0.72rem; color: #888; letter-spacing: 0.03em; }
+
+    /* === Server URL bar === */
+    #url-bar {
+      background: #fff;
+      border-bottom: 1px solid #e0e0e0;
+      padding: 8px 16px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    #url-bar label { font-size: 0.8rem; color: #555; white-space: nowrap; }
+    #server-url {
+      flex: 1;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      padding: 5px 10px;
+      font-size: 0.85rem;
+      outline: none;
+    }
+    #server-url:focus { border-color: #1a1a2e; }
+    #connect-btn {
+      padding: 6px 16px;
+      border: none;
+      border-radius: 6px;
+      background: #1a1a2e;
+      color: #fff;
+      cursor: pointer;
+      font-size: 0.85rem;
+      white-space: nowrap;
+      transition: background 0.2s;
+    }
+    #connect-btn:hover { background: #2d2d5e; }
+    #connect-btn.disconnect { background: #c0392b; }
+    #connect-btn.disconnect:hover { background: #e74c3c; }
+
+    /* === Chat window === */
+    #chat {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .bubble-row {
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+    }
+    .bubble-row.user   { justify-content: flex-end; }
+    .bubble-row.agent  { justify-content: flex-start; }
+    .bubble-row.system { justify-content: center; }
+
+    .bubble {
+      max-width: 72%;
+      padding: 10px 14px;
+      border-radius: 16px;
+      line-height: 1.55;
+      font-size: 0.9rem;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .bubble-row.user  .bubble { background: #1a1a2e; color: #fff; border-bottom-right-radius: 4px; }
+    .bubble-row.agent .bubble { background: #fff; color: #1a1a2e; border-bottom-left-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+    .bubble-row.system .bubble {
+      background: #e8eaf6;
+      color: #555;
+      font-size: 0.78rem;
+      border-radius: 8px;
+      padding: 5px 12px;
+    }
+
+    /* image bubbles */
+    .bubble img {
+      display: block;
+      max-width: 260px;
+      max-height: 260px;
+      border-radius: 10px;
+      cursor: zoom-in;
+      object-fit: contain;
+    }
+    .bubble-row.user  .bubble img { border-bottom-right-radius: 2px; }
+    .bubble-row.agent .bubble img { border-bottom-left-radius: 2px; }
+
+    /* lightbox */
+    #lightbox {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.82);
+      z-index: 9999;
+      align-items: center;
+      justify-content: center;
+      cursor: zoom-out;
+    }
+    #lightbox.open { display: flex; }
+    #lightbox img { max-width: 92vw; max-height: 92vh; border-radius: 6px; box-shadow: 0 8px 40px rgba(0,0,0,.6); }
+
+    .avatar {
+      width: 30px; height: 30px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.8rem;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .bubble-row.agent .avatar { background: #1a1a2e; color: #fff; }
+    .bubble-row.user  .avatar { background: #4caf50; color: #fff; }
+
+    /* typing indicator */
+    .typing .bubble { background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.08); padding: 12px 16px; }
+    .typing-dots { display: flex; gap: 4px; align-items: center; height: 16px; }
+    .typing-dots span {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: #999;
+      animation: bounce 1.2s infinite ease-in-out;
+    }
+    .typing-dots span:nth-child(2) { animation-delay: .2s; }
+    .typing-dots span:nth-child(3) { animation-delay: .4s; }
+    @keyframes bounce {
+      0%, 60%, 100% { transform: translateY(0); }
+      30%            { transform: translateY(-6px); }
+    }
+
+    /* === Image preview bar === */
+    #img-preview-bar {
+      display: none;
+      background: #fff;
+      border-top: 1px solid #e0e0e0;
+      padding: 8px 16px;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    #img-preview-bar.visible { display: flex; }
+    #img-preview-bar img {
+      height: 68px;
+      width: 68px;
+      object-fit: cover;
+      border-radius: 8px;
+      border: 2px solid #e0e0e0;
+    }
+    #img-preview-bar .preview-meta {
+      flex: 1;
+      font-size: 0.8rem;
+      color: #555;
+      overflow: hidden;
+    }
+    #img-preview-bar .preview-meta span {
+      display: block;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #img-preview-bar .preview-meta .file-size { color: #999; font-size: 0.74rem; }
+    #clear-img-btn {
+      width: 28px; height: 28px;
+      border: none;
+      background: #eee;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #666;
+      flex-shrink: 0;
+      font-size: 1rem;
+      line-height: 1;
+      transition: background 0.15s;
+    }
+    #clear-img-btn:hover { background: #f44336; color: #fff; }
+
+    /* === Input area === */
+    #input-area {
+      background: #fff;
+      border-top: 1px solid #e0e0e0;
+      padding: 10px 16px;
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+      flex-shrink: 0;
+    }
+    #attach-btn {
+      width: 38px; height: 38px;
+      border: none;
+      border-radius: 50%;
+      background: #f0f2f5;
+      color: #555;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: background 0.2s, color 0.2s;
+    }
+    #attach-btn:hover:not(:disabled) { background: #e0e0e0; color: #1a1a2e; }
+    #attach-btn:disabled { opacity: 0.4; cursor: default; }
+    #attach-btn.has-image { background: #1a1a2e; color: #fff; }
+    #attach-btn svg { pointer-events: none; }
+    #file-input { display: none; }
+
+    #msg-input {
+      flex: 1;
+      border: 1px solid #ccc;
+      border-radius: 20px;
+      padding: 10px 16px;
+      font-size: 0.9rem;
+      resize: none;
+      outline: none;
+      max-height: 140px;
+      overflow-y: auto;
+      line-height: 1.4;
+      font-family: inherit;
+    }
+    #msg-input:focus { border-color: #1a1a2e; }
+    #send-btn {
+      width: 38px; height: 38px;
+      border: none;
+      border-radius: 50%;
+      background: #1a1a2e;
+      color: #fff;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: background 0.2s;
+    }
+    #send-btn:hover:not(:disabled) { background: #2d2d5e; }
+    #send-btn:disabled { background: #ccc; cursor: default; }
+    #send-btn svg { pointer-events: none; }
+  </style>
+</head>
+<body>
+
+<header>
+  <span id="status-dot" class="disconnected"></span>
+  <h1>Agent Chat</h1>
+  <span id="chat-id-label"></span>
+  <span id="status-text">Disconnected</span>
+</header>
+
+<div id="url-bar">
+  <label for="server-url">Server</label>
+  <input id="server-url" type="text" value="ws://localhost:8000/api/bot" spellcheck="false" />
+  <button id="connect-btn" onclick="toggleConnection()">Connect</button>
+</div>
+
+<div id="chat"></div>
+
+<!-- staged image preview -->
+<div id="img-preview-bar">
+  <img id="img-preview-thumb" src="" alt="preview" />
+  <div class="preview-meta">
+    <span id="img-preview-name"></span>
+    <span id="img-preview-size" class="file-size"></span>
+  </div>
+  <button id="clear-img-btn" title="Remove image" onclick="clearImage()">x</button>
+</div>
+
+<div id="input-area">
+  <button id="attach-btn" disabled title="Attach image" onclick="document.getElementById('file-input').click()">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66L9.41 17.41a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+    </svg>
+  </button>
+  <input type="file" id="file-input" accept="image/*" onchange="onFileSelected(event)" />
+  <textarea id="msg-input" rows="1" placeholder="Type a message... (Enter to send, Shift+Enter for newline)"
+            onkeydown="handleKey(event)" oninput="autoResize(this)" disabled></textarea>
+  <button id="send-btn" onclick="sendAll()" disabled title="Send">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+         stroke-linecap="round" stroke-linejoin="round">
+      <line x1="22" y1="2" x2="11" y2="13"></line>
+      <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+    </svg>
+  </button>
+</div>
+
+<!-- lightbox -->
+<div id="lightbox" onclick="closeLightbox()">
+  <img id="lightbox-img" src="" alt="full size" />
+</div>
+
+<script>
+  var ws = null;
+  var chatId = null;
+  var msgCounter = 0;
+  var typingRow = null;
+  var stagedFile = null;
+
+  var chat           = document.getElementById('chat');
+  var msgInput       = document.getElementById('msg-input');
+  var sendBtn        = document.getElementById('send-btn');
+  var attachBtn      = document.getElementById('attach-btn');
+  var connectBtn     = document.getElementById('connect-btn');
+  var statusDot      = document.getElementById('status-dot');
+  var statusText     = document.getElementById('status-text');
+  var chatIdLabel    = document.getElementById('chat-id-label');
+  var previewBar     = document.getElementById('img-preview-bar');
+  var previewThumb   = document.getElementById('img-preview-thumb');
+  var previewName    = document.getElementById('img-preview-name');
+  var previewSizeLbl = document.getElementById('img-preview-size');
+
+  /* === Connection === */
+  function toggleConnection() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.close();
+    } else {
+      connect();
+    }
+  }
+
+  function connect() {
+    var url = document.getElementById('server-url').value.trim();
+    setStatus('connecting');
+    ws = new WebSocket(url);
+
+    ws.onopen = function() {};
+
+    ws.onmessage = function(e) {
+      var data;
+      try { data = JSON.parse(e.data); } catch(err) { return; }
+
+      if (data.type === 'connected') {
+        chatId = data.chat_id;
+        setStatus('connected');
+        chatIdLabel.textContent = 'session: ' + chatId;
+        addBubble('system', 'Connected -- session ' + chatId);
+        return;
+      }
+
+      removeTyping();
+      if (data.type === 'message') {
+        addBubble('agent', data.text || '');
+      } else if (data.type === 'image_path') {
+        addBubble('agent', 'Image: ' + data.path);
+      }
+    };
+
+    ws.onerror = function() {
+      removeTyping();
+      addBubble('system', 'WebSocket error.');
+    };
+
+    ws.onclose = function() {
+      removeTyping();
+      setStatus('disconnected');
+      chatId = null;
+      chatIdLabel.textContent = '';
+      addBubble('system', 'Disconnected.');
+    };
+  }
+
+  /* === Image staging === */
+  function onFileSelected(event) {
+    var file = event.target.files[0];
+    event.target.value = '';
+    if (!file) return;
+
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      var dataUrl = e.target.result;
+      var base64 = dataUrl.split(',')[1];
+      stagedFile = { dataUrl: dataUrl, base64: base64, mimeType: file.type || 'image/jpeg', name: file.name, size: file.size };
+      previewThumb.src = dataUrl;
+      previewName.textContent = file.name;
+      previewSizeLbl.textContent = formatBytes(file.size);
+      previewBar.classList.add('visible');
+      attachBtn.classList.add('has-image');
+      updateSendable();
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function clearImage() {
+    stagedFile = null;
+    previewBar.classList.remove('visible');
+    attachBtn.classList.remove('has-image');
+    previewThumb.src = '';
+    updateSendable();
+  }
+
+  /* === Sending === */
+  function sendAll() {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    var text = msgInput.value.trim();
+    var hasText = !!text;
+    var hasImage = !!stagedFile;
+    if (!hasText && !hasImage) return;
+
+    if (hasImage) {
+      var imgId = 'ui-' + Date.now() + '-' + (++msgCounter);
+      ws.send(JSON.stringify({
+        type: 'image',
+        message_id: imgId,
+        data: stagedFile.base64,
+        mime_type: stagedFile.mimeType,
+        message: text
+      }));
+      addImageBubble('user', stagedFile.dataUrl, text);
+      addTyping();
+      clearImage();
+      msgInput.value = '';
+      autoResize(msgInput);
+    } else if (hasText) {
+      var txtId = 'ui-' + Date.now() + '-' + (++msgCounter);
+      ws.send(JSON.stringify({ type: 'text', message: text, message_id: txtId }));
+      addBubble('user', text);
+      addTyping();
+      msgInput.value = '';
+      autoResize(msgInput);
+    }
+  }
+
+  function handleKey(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendAll();
+    }
+  }
+
+  function updateSendable() {
+    var connected = ws && ws.readyState === WebSocket.OPEN;
+    sendBtn.disabled = !connected || (!msgInput.value.trim() && !stagedFile);
+  }
+
+  /* === UI helpers === */
+  function makeRow(role) {
+    var row = document.createElement('div');
+    row.className = 'bubble-row ' + role;
+    if (role === 'agent') {
+      var av = document.createElement('div');
+      av.className = 'avatar';
+      av.textContent = 'AI';
+      row.appendChild(av);
+    }
+    return row;
+  }
+
+  function appendAvatar(row, role) {
+    if (role === 'user') {
+      var av = document.createElement('div');
+      av.className = 'avatar';
+      av.textContent = 'Me';
+      row.appendChild(av);
+    }
+  }
+
+  function addBubble(role, text) {
+    var row = makeRow(role);
+    var bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    bubble.textContent = text;
+    row.appendChild(bubble);
+    appendAvatar(row, role);
+    chat.appendChild(row);
+    chat.scrollTop = chat.scrollHeight;
+  }
+
+  function addImageBubble(role, dataUrl, caption) {
+    var row = makeRow(role);
+    var bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    var img = document.createElement('img');
+    img.src = dataUrl;
+    img.alt = 'uploaded image';
+    img.onclick = function() { openLightbox(dataUrl); };
+    bubble.appendChild(img);
+    if (caption) {
+      var cap = document.createElement('div');
+      cap.style.marginTop = '6px';
+      cap.style.whiteSpace = 'pre-wrap';
+      cap.style.wordBreak = 'break-word';
+      cap.textContent = caption;
+      bubble.appendChild(cap);
+    }
+    row.appendChild(bubble);
+    appendAvatar(row, role);
+    chat.appendChild(row);
+    chat.scrollTop = chat.scrollHeight;
+  }
+
+  function addTyping() {
+    removeTyping();
+    var row = document.createElement('div');
+    row.className = 'bubble-row agent typing';
+    var av = document.createElement('div');
+    av.className = 'avatar';
+    av.textContent = 'AI';
+    row.appendChild(av);
+    var bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    bubble.innerHTML = '<div class="typing-dots"><span></span><span></span><span></span></div>';
+    row.appendChild(bubble);
+    typingRow = row;
+    chat.appendChild(row);
+    chat.scrollTop = chat.scrollHeight;
+  }
+
+  function removeTyping() {
+    if (typingRow) { typingRow.remove(); typingRow = null; }
+  }
+
+  function setStatus(s) {
+    statusDot.className = s;
+    statusText.textContent = s.charAt(0).toUpperCase() + s.slice(1);
+    var connected = s === 'connected';
+    msgInput.disabled  = !connected;
+    attachBtn.disabled = !connected;
+    connectBtn.textContent = connected ? 'Disconnect' : 'Connect';
+    connectBtn.className   = connected ? 'disconnect' : '';
+    updateSendable();
+  }
+
+  function autoResize(el) {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 140) + 'px';
+    updateSendable();
+  }
+
+  function formatBytes(b) {
+    if (b < 1024) return b + ' B';
+    if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
+    return (b / 1024 / 1024).toFixed(1) + ' MB';
+  }
+
+  /* === Lightbox === */
+  function openLightbox(src) {
+    document.getElementById('lightbox-img').src = src;
+    document.getElementById('lightbox').classList.add('open');
+  }
+
+  function closeLightbox() {
+    document.getElementById('lightbox').classList.remove('open');
+  }
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeLightbox();
+  });
+</script>
+</body>
+</html>

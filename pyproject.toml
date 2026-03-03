@@ -18,7 +18,7 @@ dependencies = [
     "uvicorn[standard]",
     "lark-oapi",
     "mistune",
-    "uvloop",
+    # "uvloop",
 ]
 
 [dependency-groups]

@@ -233,7 +233,7 @@ class Agent:
         self.system_messages = [{"role": "system", "content": self.system_prompt}]
 
     async def _chat(
-        self, messages: list[dict[str, str]], orchestrator: Orchestrator
+        self, messages: list[dict[str, Any]], orchestrator: Orchestrator
     ) -> Any:
         """
         Sends a chat message to the LLM and handles the response.
@@ -274,7 +274,7 @@ class Agent:
     async def run(
         self,
         system_prompt: str,
-        messages: list[dict[str, str]],
+        messages: list[dict[str, Any]],
         orchestrator: Orchestrator,
     ) -> Any:
         """Run a single turn of the agent conversation."""

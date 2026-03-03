@@ -19,3 +19,4 @@ class ImageInputEvent:
     message_id: str
     image_data: bytes
     mime_type: str = field(default="image/jpeg")
+    message: str = field(default="")
