@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 import lark_oapi as lark
 
-from agent.core.events import HumanInputEvent
+from agent.core.events import ImageInputEvent, TextInputEvent
 from agent.core.runtime import Runtime
 from agent.core.settings import Settings
 
@@ -85,7 +85,7 @@ class FeishuMessaging(Messaging):
     def __init__(
         self,
         config: FeishuMessagingConfig,
-        event_queue: asyncio.Queue[HumanInputEvent],
+        event_queue: asyncio.Queue,
         runtime: Runtime,
     ):
         self._config = config
@@ -133,25 +133,69 @@ class FeishuMessaging(Messaging):
             logger.error(f"Failed to get Feishu message: {e}")
             return ""
 
+    async def _download_and_queue_image(
+        self, chat_id: str, message_id: str, image_key: str
+    ) -> None:
+        """Download a Feishu image and queue an ImageInputEvent."""
+        try:
+            request = (
+                lark.im.v1.GetMessageResourceRequest.builder()
+                .message_id(message_id)
+                .file_key(image_key)
+                .type("image")
+                .build()
+            )
+            response = await asyncio.to_thread(
+                self.client.im.v1.message_resource.get, request
+            )
+            if not response.success():
+                logger.error(
+                    f"Failed to download Feishu image: {response.code} - {response.msg}"
+                )
+                return
+            image_data = response.data.file.read()
+            await self.event_queue.put(
+                ImageInputEvent(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    image_data=image_data,
+                )
+            )
+        except Exception as e:
+            logger.error(f"Failed to download and queue image: {e}")
+
     def _on_message(self, data: lark.im.v1.P2ImMessageReceiveV1) -> None:
+        msg_type = data.event.message.message_type or ""
         content_json = data.event.message.content or "{}"
         content_dict = json.loads(content_json)
-        logger.info(f"Feishu event received: {content_json}")
+        logger.info(f"Feishu event received (type={msg_type}): {content_json}")
 
-        if not (data.event.message.chat_id):
-            return
-        text = content_dict.get("text", "")
-        if not text:
+        if not data.event.message.chat_id:
             return
 
         chat_id = data.event.message.chat_id
         message_id = data.event.message.message_id or ""
+        loop = asyncio.get_running_loop()
+
+        if msg_type == "image":
+            image_key = content_dict.get("image_key", "")
+            if not image_key:
+                return
+            asyncio.run_coroutine_threadsafe(
+                self._download_and_queue_image(chat_id, message_id, image_key),
+                loop,
+            )
+            return
+
+        text = content_dict.get("text", "")
+        if not text:
+            return
         text = self._get_referenced_message(data.event.message.parent_id) + text
         asyncio.run_coroutine_threadsafe(
             self.event_queue.put(
-                HumanInputEvent(chat_id=chat_id, message_id=message_id, message=text)
+                TextInputEvent(chat_id=chat_id, message_id=message_id, message=text)
             ),
-            asyncio.get_running_loop(),
+            loop,
         )
 
     async def run(self) -> None:

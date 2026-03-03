@@ -186,6 +186,8 @@ class HumanInputOrchestrator(Orchestrator):
 
     @override
     async def _before_tool_use(self, message: Any) -> None:
+        if not message.content:
+            return
         content = message.content.strip()
         if content:
             await self.messaging.send_message(self.chat_id, content)

@@ -13,13 +13,13 @@ from typing import Final
 import uvloop
 
 from agent.app import AppWithDependencies
-from agent.core.events import HeartbeatEvent, HumanInputEvent
+from agent.core.events import HeartbeatEvent, ImageInputEvent, TextInputEvent
 from agent.core.settings import get_settings
 from agent.llm.agent import HeartbeatOrchestrator, HumanInputOrchestrator
 
 logger = logging.getLogger("agent")
 
-AgentEvent = HeartbeatEvent | HumanInputEvent
+AgentEvent = HeartbeatEvent | TextInputEvent | ImageInputEvent
 
 
 @dataclass
@@ -42,7 +42,7 @@ class Scheduler:
     """
     Event-driven scheduler that manages agent execution cycles.
 
-    Processes HeartbeatEvents (periodic) and HumanInputEvents (from API).
+    Processes HeartbeatEvents (periodic), TextInputEvents, and ImageInputEvents.
     """
 
     app: Final[AppWithDependencies]
@@ -114,7 +114,7 @@ SYSTEM EVENT: Heartbeat""",
             conversation.chat_id, "Conversation compressed"
         )
 
-    async def _process_human_input(self, event: HumanInputEvent) -> None:
+    async def _process_text_input(self, event: TextInputEvent) -> None:
         if event.message == "/new":
             self.conversations[event.chat_id] = Conversation(event.chat_id)
             await self.app.messaging.send_message(event.chat_id, "New session started")
@@ -152,7 +152,7 @@ Timezone: {now.tzinfo}
 {event.message}""",
             }
         )
-        logger.info(f"Processing human input: {event.message[:100]}...")
+        logger.info(f"Processing text input: {event.message[:100]}...")
 
         prompt = self.app.prompt_builder.build_with_previous_summary(
             conversation.previous_summary
@@ -167,7 +167,69 @@ Timezone: {now.tzinfo}
         response = await self.app.agent.run(prompt, conversation.messages, orchestrator)
         conversation.total_tokens = response.usage.total_tokens
         self.conversations[event.chat_id] = conversation
-        logger.info("Human input processing completed")
+        logger.info("Text input processing completed")
+
+    async def _process_image_input(self, event: ImageInputEvent) -> None:
+        if not self.app.settings.vision_support:
+            logger.debug("Vision support disabled, ignoring ImageInputEvent")
+            await self.app.messaging.send_message(
+                event.chat_id, "Received image input but vision support is disabled."
+            )
+            return
+
+        conversation = self.conversations.get(
+            event.chat_id, Conversation(event.chat_id)
+        )
+        if event.message_id in conversation.message_ids:
+            logger.debug(f"Ignoring duplicated image message {event.message_id}")
+            return
+        conversation.message_ids.add(event.message_id)
+
+        if (
+            self.app.settings.enable_context_auto_compression
+            and conversation.messages
+            and conversation.total_tokens >= self.app.settings.context_max_tokens
+        ):
+            await self._compress_conversation(conversation)
+
+        import base64
+
+        now = datetime.now().astimezone()
+        current_datetime = now.strftime("%Y-%m-%d %H:%M:%S %Z%z")
+        image_b64 = base64.b64encode(event.image_data).decode()
+        conversation.messages.append(
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": f"Message Time: {current_datetime}\nTimezone: {now.tzinfo}",
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:{event.mime_type};base64,{image_b64}"
+                        },
+                    },
+                ],
+            }
+        )
+        logger.info("Processing image input from Feishu")
+
+        prompt = self.app.prompt_builder.build_with_previous_summary(
+            conversation.previous_summary
+        )
+        orchestrator = HumanInputOrchestrator(
+            event.chat_id,
+            event.message_id,
+            self.app.model_name,
+            self.app.tool_registry,
+            self.app.messaging,
+        )
+        response = await self.app.agent.run(prompt, conversation.messages, orchestrator)
+        conversation.total_tokens = response.usage.total_tokens
+        self.conversations[event.chat_id] = conversation
+        logger.info("Image input processing completed")
 
     async def _dispatch(self, event: AgentEvent) -> None:
         """Dispatch a single event as a self-contained async task."""
@@ -176,8 +238,10 @@ Timezone: {now.tzinfo}
                 self.heartbeat_task.cancel()
             if isinstance(event, HeartbeatEvent):
                 await self._process_heartbeat()
-            elif isinstance(event, HumanInputEvent):
-                await self._process_human_input(event)
+            elif isinstance(event, TextInputEvent):
+                await self._process_text_input(event)
+            elif isinstance(event, ImageInputEvent):
+                await self._process_image_input(event)
             else:
                 logger.warning(f"Unknown event type: {type(event)}")
         except Exception as e:

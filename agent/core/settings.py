@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     feishu_verification_token: str = ""
     feishu_notify_chat_id: str = ""
 
+    # Vision settings
+    vision_support: bool = False
+
     # API server settings
     api_enabled: bool = False
     api_host: str = "0.0.0.0"

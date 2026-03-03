@@ -13,7 +13,7 @@ import uvicorn
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from agent.core.events import HumanInputEvent
+from agent.core.events import TextInputEvent
 from agent.core.settings import Settings
 
 logger = logging.getLogger(__name__)
@@ -91,7 +91,7 @@ def create_api(event_queue: asyncio.Queue) -> FastAPI:
         """Accept human input and queue it for the agent."""
         logger.info(f"Received human input: {request.message[:100]}...")
         await event_queue.put(
-            HumanInputEvent(
+            TextInputEvent(
                 chat_id=request.chat_id,
                 message_id=request.message_id,
                 message=request.message,

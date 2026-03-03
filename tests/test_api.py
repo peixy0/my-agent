@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from agent.api.server import create_api
-from agent.core.events import HumanInputEvent
+from agent.core.events import TextInputEvent
 
 
 @pytest.fixture
@@ -30,7 +30,7 @@ class TestAPI:
         assert response.json() == {"status": "ok"}
 
     def test_submit_input(self, client, event_queue):
-        """Test POST /api/bot queues a HumanInputEvent."""
+        """Test POST /api/bot queues a TextInputEvent."""
         response = client.post(
             "/api/bot",
             json={
@@ -45,7 +45,7 @@ class TestAPI:
         # Verify event was queued
         assert not event_queue.empty()
         event = event_queue.get_nowait()
-        assert isinstance(event, HumanInputEvent)
+        assert isinstance(event, TextInputEvent)
         assert event.message == "Hello from test"
 
     def test_submit_input_validation_error(self, client):
