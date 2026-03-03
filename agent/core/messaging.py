@@ -230,7 +230,7 @@ class FeishuMessaging(Messaging):
                     f"Failed to download Feishu image: {response.code} - {response.msg}"
                 )
                 return
-            image_data = response.data.file.read()
+            image_data = response.file.read()
             await self.event_queue.put(
                 ImageInputEvent(
                     chat_id=chat_id,
