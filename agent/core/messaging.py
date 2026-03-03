@@ -224,9 +224,7 @@ class FeishuMessaging(Messaging):
                 .type("image")
                 .build()
             )
-            response = await asyncio.to_thread(
-                self.client.im.v1.message_resource.get, request
-            )
+            response = await self.client.im.v1.message_resource.aget(request)
             if not response.success():
                 logger.error(
                     f"Failed to download Feishu image: {response.code} - {response.msg}"
@@ -315,7 +313,7 @@ class FeishuMessaging(Messaging):
             .build()
         )
 
-        response = await asyncio.to_thread(self.client.im.v1.message.create, request)
+        response = await self.client.im.v1.message.acreate(request)
         if not response.success():
             logger.error(
                 f"Failed to send Feishu message: {response.code} - {response.msg}"
@@ -336,9 +334,7 @@ class FeishuMessaging(Messaging):
             .build()
         )
 
-        response = await asyncio.to_thread(
-            self.client.im.v1.message_reaction.create, request
-        )
+        response = await self.client.im.v1.message_reaction.acreate(request)
         if not response.success():
             logger.error(f"Failed to add reaction: {response.code} - {response.msg}")
             raise Exception(f"Failed to add reaction: {response.code} - {response.msg}")
@@ -370,9 +366,7 @@ class FeishuMessaging(Messaging):
             .build()
         )
 
-        upload_response = await asyncio.to_thread(
-            self.client.im.v1.image.create, upload_request
-        )
+        upload_response = await self.client.im.v1.image.acreate(upload_request)
         if not upload_response.success():
             logger.error(
                 f"Failed to upload image: {upload_response.code} - {upload_response.msg}"
@@ -397,7 +391,7 @@ class FeishuMessaging(Messaging):
             .build()
         )
 
-        response = await asyncio.to_thread(self.client.im.v1.message.create, request)
+        response = await self.client.im.v1.message.acreate(request)
         if not response.success():
             logger.error(
                 f"Failed to send Feishu image message: {response.code} - {response.msg}"
