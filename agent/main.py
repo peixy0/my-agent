@@ -17,78 +17,55 @@ except ImportError:  # pragma: no cover
     uvloop = None  # type: ignore[assignment]
 
 from agent.app import AppWithDependencies
-from agent.core.events import HeartbeatEvent, ImageInputEvent, TextInputEvent
+from agent.core.events import (
+    HeartbeatEvent,
+    ImageInputEvent,
+    NewSessionEvent,
+    TextInputEvent,
+)
 from agent.core.settings import get_settings
 from agent.llm.agent import HeartbeatOrchestrator, HumanInputOrchestrator
+from agent.messaging.sender import MessageSender
 
 logger = logging.getLogger("agent")
 
-AgentEvent = HeartbeatEvent | TextInputEvent | ImageInputEvent
+AgentEvent = TextInputEvent | ImageInputEvent
+WorkerEvent = HeartbeatEvent | NewSessionEvent | TextInputEvent | ImageInputEvent
 
 
 @dataclass
 class Conversation:
-    chat_id: str
     messages: list[dict[str, Any]]
     message_ids: set[str]
     total_tokens: int
     previous_summary: str
 
-    def __init__(self, chat_id: str):
-        self.chat_id = chat_id
+    def __init__(self) -> None:
         self.messages = []
         self.message_ids = set()
         self.total_tokens = 0
         self.previous_summary = ""
 
 
-class Scheduler:
+class ConversationWorker:
     """
-    Event-driven scheduler that manages agent execution cycles.
+    Processes human-input events for a single chat conversation.
 
-    Processes HeartbeatEvents (periodic), TextInputEvents, and ImageInputEvents.
+    Each worker owns an asyncio.Queue and runs as a background task, ensuring
+    messages for the same conversation are processed sequentially while
+    conversations for different chat_ids run concurrently.
     """
 
     app: Final[AppWithDependencies]
-    running: bool
-    heartbeat_task: asyncio.Task[None] | None
-    conversations: dict[str, Conversation]
+    queue: asyncio.Queue[WorkerEvent]
+    conversation: Conversation
 
-    def __init__(self, app: AppWithDependencies):
+    def __init__(self, app: AppWithDependencies) -> None:
         self.app = app
-        self.running = True
-        self.heartbeat_task = None
-        self.conversations = {}
+        self.queue = asyncio.Queue()
+        self.conversation = Conversation()
 
-    async def _schedule_heartbeat(self) -> None:
-        if self.app.settings.wake_interval_seconds <= 0:
-            return
-        logger.info(f"Sleeping for {self.app.settings.wake_interval_seconds} seconds")
-        await asyncio.sleep(self.app.settings.wake_interval_seconds)
-        await self.app.event_queue.put(HeartbeatEvent())
-
-    async def _process_heartbeat(self) -> None:
-        logger.info("Executing agent heartbeat cycle")
-        prompt = self.app.prompt_builder.build_for_heartbeat()
-        now = datetime.now().astimezone()
-        current_datetime = now.strftime("%Y-%m-%d %H:%M:%S %Z%z")
-        messages = [
-            {
-                "role": "user",
-                "content": f"""Current Time: {current_datetime}
-Timezone: {now.tzinfo}
-SYSTEM EVENT: Heartbeat""",
-            }
-        ]
-        orchestrator = HeartbeatOrchestrator(
-            self.app.model_name,
-            self.app.tool_registry,
-            self.app.messaging,
-        )
-        await self.app.agent.run(prompt, messages, orchestrator)
-        logger.info("Heartbeat cycle completed")
-
-    async def _compress_conversation(self, conversation: Conversation) -> None:
+    async def _compress_conversation(self, sender: MessageSender) -> None:
         """
         Compress old messages into a structured summary, retaining the recent tail.
 
@@ -97,59 +74,66 @@ SYSTEM EVENT: Heartbeat""",
         each compression is incremental — earlier history is never silently lost.
         """
         keep_last = self.app.settings.context_num_keep_last
-        if keep_last > 0 and len(conversation.messages) > keep_last:
-            to_summarize = conversation.messages[:-keep_last]
-            retained = conversation.messages[-keep_last:]
+        if keep_last > 0 and len(self.conversation.messages) > keep_last:
+            to_summarize = self.conversation.messages[:-keep_last]
+            retained = self.conversation.messages[-keep_last:]
         else:
-            to_summarize = conversation.messages
+            to_summarize = self.conversation.messages
             retained = []
 
         logger.info(
             f"Compressing {len(to_summarize)} messages, retaining {len(retained)}"
         )
-        await self.app.messaging.send_message(
-            conversation.chat_id, "Context window full, compressing conversation…"
-        )
-        conversation.previous_summary = await self.app.agent.compress(
+        await sender.send("Context window full, compressing conversation…")
+        self.conversation.previous_summary = await self.app.agent.compress(
             to_summarize,
-            previous_summary=conversation.previous_summary,
+            previous_summary=self.conversation.previous_summary,
         )
-        conversation.messages = retained
-        conversation.total_tokens = 0
-        await self.app.messaging.send_message(
-            conversation.chat_id, "Conversation compressed"
+        self.conversation.messages = retained
+        self.conversation.total_tokens = 0
+        await sender.send("Conversation compressed")
+
+    async def _process_new_session(self, event: NewSessionEvent) -> None:
+        self.conversation = Conversation()
+        await event.sender.send("New session started")
+
+    async def _process_heartbeat(self, event: HeartbeatEvent) -> None:
+        prompt = self.app.prompt_builder.build_for_heartbeat()
+        now = datetime.now().astimezone()
+        current_datetime = now.strftime("%Y-%m-%d %H:%M:%S %Z%z")
+        messages = [
+            {
+                "role": "user",
+                "content": f"""Current Time: {current_datetime}
+Timezone: {now.tzinfo}
+
+SYSTEM EVENT: Heartbeat""",
+            }
+        ]
+        orchestrator = HeartbeatOrchestrator(
+            self.app.model_name,
+            self.app.tool_registry,
+            event.sender,
         )
+        await self.app.agent.run(prompt, messages, orchestrator)
+        logger.info("Heartbeat cycle completed")
 
     async def _process_text_input(self, event: TextInputEvent) -> None:
-        if event.message == "/new":
-            self.conversations[event.chat_id] = Conversation(event.chat_id)
-            await self.app.messaging.send_message(event.chat_id, "New session started")
-            return
-        if event.message == "/heartbeat":
-            await self.app.event_queue.put(HeartbeatEvent())
-            await self.app.messaging.send_message(
-                event.chat_id, "New heartbeat started"
-            )
-            return
-
-        conversation = self.conversations.get(
-            event.chat_id, Conversation(event.chat_id)
-        )
-        if event.message_id in conversation.message_ids:
+        if event.message_id in self.conversation.message_ids:
             logger.debug(f"Ignoring duplicated message {event.message_id}")
             return
-        conversation.message_ids.add(event.message_id)
+        self.conversation.message_ids.add(event.message_id)
 
         if (
             self.app.settings.enable_context_auto_compression
-            and conversation.messages
-            and conversation.total_tokens >= self.app.settings.context_max_tokens
+            and self.conversation.messages
+            and self.conversation.total_tokens >= self.app.settings.context_max_tokens
         ):
-            await self._compress_conversation(conversation)
+            await self._compress_conversation(event.sender)
 
         now = datetime.now().astimezone()
         current_datetime = now.strftime("%Y-%m-%d %H:%M:%S %Z%z")
-        conversation.messages.append(
+        self.conversation.messages.append(
             {
                 "role": "user",
                 "content": f"""Message Time: {current_datetime}
@@ -161,47 +145,43 @@ Timezone: {now.tzinfo}
         logger.info(f"Processing text input: {event.message[:100]}...")
 
         prompt = self.app.prompt_builder.build_with_previous_summary(
-            conversation.previous_summary
+            self.conversation.previous_summary
         )
         orchestrator = HumanInputOrchestrator(
-            event.chat_id,
-            event.message_id,
             self.app.model_name,
             self.app.tool_registry,
-            self.app.messaging,
+            event.sender,
         )
-        response = await self.app.agent.run(prompt, conversation.messages, orchestrator)
-        conversation.total_tokens = response.usage.total_tokens
-        self.conversations[event.chat_id] = conversation
+        response = await self.app.agent.run(
+            prompt, self.conversation.messages, orchestrator
+        )
+        self.conversation.total_tokens = response.usage.total_tokens
         logger.info("Text input processing completed")
 
     async def _process_image_input(self, event: ImageInputEvent) -> None:
         if not self.app.settings.vision_support:
             logger.debug("Vision support disabled, ignoring ImageInputEvent")
-            await self.app.messaging.send_message(
-                event.chat_id, "Received image input but vision support is disabled."
+            await event.sender.send(
+                "Received image input but vision support is disabled."
             )
             return
 
-        conversation = self.conversations.get(
-            event.chat_id, Conversation(event.chat_id)
-        )
-        if event.message_id in conversation.message_ids:
+        if event.message_id in self.conversation.message_ids:
             logger.debug(f"Ignoring duplicated image message {event.message_id}")
             return
-        conversation.message_ids.add(event.message_id)
+        self.conversation.message_ids.add(event.message_id)
 
         if (
             self.app.settings.enable_context_auto_compression
-            and conversation.messages
-            and conversation.total_tokens >= self.app.settings.context_max_tokens
+            and self.conversation.messages
+            and self.conversation.total_tokens >= self.app.settings.context_max_tokens
         ):
-            await self._compress_conversation(conversation)
+            await self._compress_conversation(event.sender)
 
         now = datetime.now().astimezone()
         current_datetime = now.strftime("%Y-%m-%d %H:%M:%S %Z%z")
         image_b64 = base64.b64encode(event.image_data).decode()
-        conversation.messages.append(
+        self.conversation.messages.append(
             {
                 "role": "user",
                 "content": [
@@ -226,45 +206,120 @@ Timezone: {now.tzinfo}
         logger.info("Processing image input")
 
         prompt = self.app.prompt_builder.build_with_previous_summary(
-            conversation.previous_summary
+            self.conversation.previous_summary
         )
         orchestrator = HumanInputOrchestrator(
-            event.chat_id,
-            event.message_id,
             self.app.model_name,
             self.app.tool_registry,
-            self.app.messaging,
+            event.sender,
         )
-        response = await self.app.agent.run(prompt, conversation.messages, orchestrator)
-        conversation.total_tokens = response.usage.total_tokens
-        self.conversations[event.chat_id] = conversation
+        response = await self.app.agent.run(
+            prompt, self.conversation.messages, orchestrator
+        )
+        self.conversation.total_tokens = response.usage.total_tokens
         logger.info("Image input processing completed")
 
+    async def run(self) -> None:
+        """Process events from this worker's queue until cancelled."""
+        logger.info("Conversation worker started")
+        while True:
+            event = await self.queue.get()
+            try:
+                if isinstance(event, HeartbeatEvent):
+                    await self._process_heartbeat(event)
+                elif isinstance(event, NewSessionEvent):
+                    await self._process_new_session(event)
+                elif isinstance(event, TextInputEvent):
+                    await self._process_text_input(event)
+                elif isinstance(event, ImageInputEvent):
+                    await self._process_image_input(event)
+                else:
+                    logger.warning(f"Unexpected event type in worker: {type(event)}")
+            except Exception as e:
+                logger.error(f"Error in worker {event.chat_id}: {e}", exc_info=True)
+                await event.sender.send(f"Error during processing: {e}")
+            finally:
+                self.queue.task_done()
+
+
+class Scheduler:
+    """
+    Event-driven scheduler that dispatches inbound events to per-chat workers.
+
+    Commands (/heartbeat, /new) are translated to typed internal events here
+    so ConversationWorkers never need to parse raw message text.
+
+    A repeating heartbeat loop is started only when /heartbeat is received,
+    bound to the sender that triggered it.  A new /heartbeat replaces any
+    existing loop.
+    """
+
+    app: Final[AppWithDependencies]
+    running: bool
+    _workers: dict[str, tuple[ConversationWorker, asyncio.Task[None]]]
+    _heartbeat_task: asyncio.Task[None] | None
+
+    def __init__(self, app: AppWithDependencies):
+        self.app = app
+        self.running = True
+        self._workers = {}
+        self._heartbeat_task = None
+
+    def _get_or_create_worker(self, chat_id: str) -> ConversationWorker:
+        """Return the existing worker for *chat_id* or create and start a new one."""
+        if chat_id not in self._workers:
+            worker = ConversationWorker(self.app)
+            self._workers[chat_id] = (worker, asyncio.create_task(worker.run()))
+
+            logger.info(f"Started conversation worker for chat_id={chat_id}")
+        worker, _ = self._workers[chat_id]
+        return worker
+
+    async def _schedule_heartbeat(
+        self, chat_id: str, sender: MessageSender, interval_seconds: int
+    ) -> None:
+        """Sleep then fire a heartbeat to *chat_id* via *sender*, then repeat."""
+        worker = self._get_or_create_worker(chat_id)
+        await worker.queue.put(HeartbeatEvent(chat_id=chat_id, sender=sender))
+        logger.info(f"Heartbeat dispatched to chat_id={chat_id}")
+        if interval_seconds <= 0:
+            return
+        while True:
+            await asyncio.sleep(interval_seconds)
+            worker = self._get_or_create_worker(chat_id)
+            await worker.queue.put(HeartbeatEvent(chat_id=chat_id, sender=sender))
+            logger.info(f"Heartbeat dispatched to chat_id={chat_id}")
+
     async def _dispatch(self, event: AgentEvent) -> None:
-        """Dispatch a single event as a self-contained async task."""
+        """Translate commands and route every event to the appropriate worker."""
         try:
-            if self.heartbeat_task:
-                self.heartbeat_task.cancel()
-            if isinstance(event, HeartbeatEvent):
-                await self._process_heartbeat()
-            elif isinstance(event, TextInputEvent):
-                await self._process_text_input(event)
-            elif isinstance(event, ImageInputEvent):
-                await self._process_image_input(event)
+            if isinstance(event, TextInputEvent) and event.message.startswith(
+                "/heartbeat"
+            ):
+                param = event.message[len("/heartbeat") :].strip()
+                try:
+                    interval_seconds = int(param)
+                except ValueError:
+                    interval_seconds = self.app.settings.wake_interval_seconds
+                if self._heartbeat_task:
+                    self._heartbeat_task.cancel()
+                self._heartbeat_task = asyncio.create_task(
+                    self._schedule_heartbeat(
+                        event.chat_id, event.sender, interval_seconds
+                    )
+                )
+            elif isinstance(event, TextInputEvent) and event.message.startswith("/new"):
+                await self._get_or_create_worker(event.chat_id).queue.put(
+                    NewSessionEvent(chat_id=event.chat_id, sender=event.sender)
+                )
             else:
-                logger.warning(f"Unknown event type: {type(event)}")
+                worker = self._get_or_create_worker(event.chat_id)
+                await worker.queue.put(event)
         except Exception as e:
-            logger.error(f"Error during event processing: {e}", exc_info=True)
-            await self.app.messaging.notify(f"Error during event processing: {e}")
-        finally:
-            self.heartbeat_task = asyncio.create_task(self._schedule_heartbeat())
+            logger.error(f"Error during event dispatch: {e}", exc_info=True)
 
     async def run(self) -> None:
         logger.info("Scheduler starting...")
-        logger.info(f"Wake interval: {self.app.settings.wake_interval_seconds} seconds")
-
-        # Trigger initial heartbeat
-        # await self.app.event_queue.put(HeartbeatEvent())
 
         while self.running:
             event = await self.app.event_queue.get()
@@ -283,7 +338,7 @@ async def main() -> None:
     logger.addHandler(logger_stream)
     logger.setLevel(logging.DEBUG)
 
-    # Start dependent background tasks (messaging, API server)
+    # Start dependent background tasks (messaging source, API server)
     app = AppWithDependencies(get_settings())
     await app.run()
 

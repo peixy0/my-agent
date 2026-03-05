@@ -10,12 +10,13 @@ import logging
 import os
 
 from agent.api.server import ApiService, create_api_service
-from agent.core.messaging import MessagingBus, create_messaging
 from agent.core.runtime import ContainerRuntime, HostRuntime
 from agent.core.settings import Settings
 from agent.llm.agent import Agent
 from agent.llm.factory import LLMFactory
 from agent.llm.prompt_builder import SystemPromptBuilder
+from agent.messaging.sender import MessageSource
+from agent.messaging.source import create_message_source
 from agent.tools.skill_loader import SkillLoader
 from agent.tools.tool_registry import ToolRegistry
 from agent.tools.toolbox import register_default_tools
@@ -48,30 +49,29 @@ class AppWithDependencies:
         self.tool_registry = ToolRegistry(
             tool_timeout=self.settings.tool_timeout,
         )
-        self.messaging: MessagingBus = create_messaging(
-            self.settings, self.event_queue, self.runtime
-        )
         register_default_tools(
             self.tool_registry, self.runtime, self.skill_loader, self.settings
         )
 
-        # LLM client
-        self.llm_client = LLMFactory(self.settings).create()
-
-        # Agent
-        self.model_name = self.settings.openai_model
-        self.agent = Agent(
-            self.llm_client,
-            self.settings.openai_model,
-            self.tool_registry,
-            self.messaging,
+        # Message source (inbound)
+        self.message_source: MessageSource = create_message_source(
+            self.settings, self.event_queue, self.runtime
         )
-        self.prompt_builder = SystemPromptBuilder(self.settings, self.skill_loader)
 
         # API Service
         self.api_service: ApiService = create_api_service(
-            self.settings, self.event_queue, self.messaging
+            self.settings, self.event_queue
         )
+
+        # Agent
+        self.llm_client = LLMFactory(self.settings).create()
+        self.model_name = self.settings.openai_model
+        self.agent = Agent(
+            self.llm_client,
+            self.model_name,
+            self.tool_registry,
+        )
+        self.prompt_builder = SystemPromptBuilder(self.settings, self.skill_loader)
 
         self._background_tasks: list[asyncio.Task] = []
 
@@ -80,6 +80,6 @@ class AppWithDependencies:
         os.chdir(self.settings.cwd)
 
         self._background_tasks = [
-            asyncio.create_task(self.messaging.run()),
+            asyncio.create_task(self.message_source.run()),
             asyncio.create_task(self.api_service.run()),
         ]

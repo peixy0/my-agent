@@ -26,8 +26,8 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 
 from agent.core.events import ImageInputEvent, TextInputEvent
-from agent.core.messaging import MessagingBus, WebSocketMessaging
 from agent.core.settings import Settings
+from agent.messaging.websocket import WebSocketSender
 
 logger = logging.getLogger(__name__)
 
@@ -72,14 +72,14 @@ class UvicornApiService(ApiService):
         await server.serve()
 
 
-def create_api(event_queue: asyncio.Queue, messaging_bus: MessagingBus) -> FastAPI:
+def create_api(event_queue: asyncio.Queue) -> FastAPI:
     """
     Factory that creates and returns the FastAPI application.
 
     Args:
-        event_queue:   Shared queue with the Scheduler; events are placed here.
-        messaging_bus: MessagingBus used to register per-session WebSocket backends
-                       so the agent can push replies back to the correct client.
+        event_queue: Shared queue with the Scheduler; events are placed here.
+                     Each inbound event carries its own MessageSender so the
+                     agent can push replies back to the originating client.
     """
     app = FastAPI(
         title="sys-agent API",
@@ -107,8 +107,6 @@ def create_api(event_queue: asyncio.Queue, messaging_bus: MessagingBus) -> FastA
         """WebSocket endpoint: one session per connection."""
         await websocket.accept()
         chat_id = f"ws-{uuid.uuid4().hex}"
-        ws_messaging = WebSocketMessaging(websocket, chat_id)
-        messaging_bus.register(chat_id, ws_messaging)
         logger.info(f"WebSocket connected: chat_id={chat_id}")
 
         try:
@@ -118,6 +116,7 @@ def create_api(event_queue: asyncio.Queue, messaging_bus: MessagingBus) -> FastA
                 msg_type: str = data.get("type", "text")
                 message_id: str = data.get("message_id") or uuid.uuid4().hex
                 message: str = data.get("message", "")
+                sender = WebSocketSender(websocket, chat_id, message_id)
 
                 if msg_type == "image":
                     raw_data: str = data.get("data", "")
@@ -136,6 +135,7 @@ def create_api(event_queue: asyncio.Queue, messaging_bus: MessagingBus) -> FastA
                             image_data=image_bytes,
                             mime_type=mime_type,
                             message=message,
+                            sender=sender,
                         )
                     )
                 else:
@@ -147,14 +147,13 @@ def create_api(event_queue: asyncio.Queue, messaging_bus: MessagingBus) -> FastA
                             chat_id=chat_id,
                             message_id=message_id,
                             message=message,
+                            sender=sender,
                         )
                     )
         except WebSocketDisconnect:
             logger.info(f"WebSocket disconnected: chat_id={chat_id}")
         except Exception as e:
             logger.error(f"WebSocket error [{chat_id}]: {e}", exc_info=True)
-        finally:
-            messaging_bus.unregister(chat_id)
 
     @app.get("/api/health")
     async def health_check() -> dict:
@@ -167,10 +166,9 @@ def create_api(event_queue: asyncio.Queue, messaging_bus: MessagingBus) -> FastA
 def create_api_service(
     settings: Settings,
     event_queue: asyncio.Queue,
-    messaging_bus: MessagingBus,
 ) -> ApiService:
     """Create the appropriate API service based on settings."""
     if settings.api_enabled:
-        app = create_api(event_queue, messaging_bus)
+        app = create_api(event_queue)
         return UvicornApiService(app, settings.api_host, settings.api_port)
     return NullApiService()

@@ -11,9 +11,9 @@ from typing import Any, cast
 import trafilatura
 from ddgs import DDGS
 
-from agent.core.messaging import Messaging
 from agent.core.runtime import Runtime
 from agent.core.settings import Settings
+from agent.messaging.sender import MessageSender
 from agent.tools.skill_loader import SkillLoader
 from agent.tools.tool_registry import ToolRegistry
 
@@ -245,9 +245,7 @@ def register_default_tools(
 
 def register_human_input_tools(
     registry: ToolRegistry,
-    messaging: Messaging,
-    chat_id: str,
-    message_id: str,
+    sender: MessageSender,
 ) -> None:
     """Register tools that are only available during human-input interactions."""
 
@@ -256,7 +254,7 @@ def register_human_input_tools(
         React to the current message with an emoji.
         """
         try:
-            await messaging.add_reaction(message_id, emoji)
+            await sender.react(emoji)
             return {
                 "status": "success",
                 "message": f"Added reaction {emoji} to message",
@@ -297,7 +295,7 @@ def register_human_input_tools(
         Send an image file to the user. Image file size must be under 10 MiB.
         """
         try:
-            await messaging.send_image(chat_id, image_path)
+            await sender.send_image(image_path)
             return {
                 "status": "success",
                 "message": f"Sent image {image_path} to user",
