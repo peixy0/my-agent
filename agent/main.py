@@ -59,11 +59,13 @@ class ConversationWorker:
     app: Final[AppWithDependencies]
     queue: asyncio.Queue[WorkerEvent]
     conversation: Conversation
+    _heartbeat_task: asyncio.Task[None] | None
 
     def __init__(self, app: AppWithDependencies) -> None:
         self.app = app
         self.queue = asyncio.Queue()
         self.conversation = Conversation()
+        self._heartbeat_task = None
 
     async def _compress_conversation(self, sender: MessageSender) -> None:
         """
@@ -97,7 +99,16 @@ class ConversationWorker:
         self.conversation = Conversation()
         await event.sender.send("New session started")
 
+    async def _schedule_next_heartbeat(self, event: HeartbeatEvent) -> None:
+        await asyncio.sleep(event.interval_seconds)
+        await self.queue.put(event)
+
     async def _process_heartbeat(self, event: HeartbeatEvent) -> None:
+        if self._heartbeat_task:
+            self._heartbeat_task.cancel()
+        if event.interval_seconds <= 0:
+            return
+        logger.info("Processing heartbeat")
         prompt = self.app.prompt_builder.build_for_heartbeat()
         now = datetime.now().astimezone()
         current_datetime = now.strftime("%Y-%m-%d %H:%M:%S %Z%z")
@@ -117,6 +128,7 @@ SYSTEM EVENT: Heartbeat""",
         )
         await self.app.agent.run(prompt, messages, orchestrator)
         logger.info("Heartbeat cycle completed")
+        self._heartbeat_task = asyncio.create_task(self._schedule_next_heartbeat(event))
 
     async def _process_text_input(self, event: TextInputEvent) -> None:
         if event.message_id in self.conversation.message_ids:
@@ -257,13 +269,11 @@ class Scheduler:
     app: Final[AppWithDependencies]
     running: bool
     _workers: dict[str, tuple[ConversationWorker, asyncio.Task[None]]]
-    _heartbeat_task: asyncio.Task[None] | None
 
     def __init__(self, app: AppWithDependencies):
         self.app = app
         self.running = True
         self._workers = {}
-        self._heartbeat_task = None
 
     def _get_or_create_worker(self, chat_id: str) -> ConversationWorker:
         """Return the existing worker for *chat_id* or create and start a new one."""
@@ -274,21 +284,6 @@ class Scheduler:
             logger.info(f"Started conversation worker for chat_id={chat_id}")
         worker, _ = self._workers[chat_id]
         return worker
-
-    async def _schedule_heartbeat(
-        self, chat_id: str, sender: MessageSender, interval_seconds: int
-    ) -> None:
-        """Sleep then fire a heartbeat to *chat_id* via *sender*, then repeat."""
-        worker = self._get_or_create_worker(chat_id)
-        await worker.queue.put(HeartbeatEvent(chat_id=chat_id, sender=sender))
-        logger.info(f"Heartbeat dispatched to chat_id={chat_id}")
-        if interval_seconds <= 0:
-            return
-        while True:
-            await asyncio.sleep(interval_seconds)
-            worker = self._get_or_create_worker(chat_id)
-            await worker.queue.put(HeartbeatEvent(chat_id=chat_id, sender=sender))
-            logger.info(f"Heartbeat dispatched to chat_id={chat_id}")
 
     async def _dispatch(self, event: AgentEvent) -> None:
         """Translate commands and route every event to the appropriate worker."""
@@ -301,12 +296,15 @@ class Scheduler:
                     interval_seconds = int(param)
                 except ValueError:
                     interval_seconds = self.app.settings.wake_interval_seconds
-                if self._heartbeat_task:
-                    self._heartbeat_task.cancel()
-                self._heartbeat_task = asyncio.create_task(
-                    self._schedule_heartbeat(
-                        event.chat_id, event.sender, interval_seconds
+                await self._get_or_create_worker(event.chat_id).queue.put(
+                    HeartbeatEvent(
+                        chat_id=event.chat_id,
+                        interval_seconds=interval_seconds,
+                        sender=event.sender,
                     )
+                )
+                await event.sender.send(
+                    f"Heartbeat started: interval {interval_seconds}"
                 )
             elif isinstance(event, TextInputEvent) and event.message.startswith("/new"):
                 await self._get_or_create_worker(event.chat_id).queue.put(

@@ -6,6 +6,7 @@ from agent.messaging.sender import MessageSender
 @dataclass
 class HeartbeatEvent:
     chat_id: str
+    interval_seconds: int
     sender: MessageSender
 
 
