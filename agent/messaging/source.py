@@ -3,6 +3,7 @@ import asyncio
 from agent.core.runtime import Runtime
 from agent.core.sender import MessageSource, NullSource
 from agent.core.settings import Settings
+from agent.messaging.feishu import FeishuConfig, FeishuSource
 
 
 def create_message_source(
@@ -12,8 +13,6 @@ def create_message_source(
 ) -> MessageSource:
     """Return the appropriate ``MessageSource`` for the current config."""
     if settings.feishu_app_id and settings.feishu_app_secret:
-        from agent.messaging.feishu import FeishuConfig, FeishuSource
-
         config = FeishuConfig(
             app_id=settings.feishu_app_id,
             app_secret=settings.feishu_app_secret,
