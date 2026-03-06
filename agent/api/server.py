@@ -171,7 +171,7 @@ def create_api_service(
     event_queue: asyncio.Queue,
 ) -> ApiService:
     """Create the appropriate API service based on settings."""
-    if settings.api_enabled:
+    if settings.webui_enabled:
         app = create_api(event_queue)
-        return UvicornApiService(app, settings.api_host, settings.api_port)
+        return UvicornApiService(app, settings.webui_host, settings.webui_port)
     return NullApiService()

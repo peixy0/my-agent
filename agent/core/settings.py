@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     # Agent settings
     tool_timeout: int = 60
     proxy: str = ""
+    enable_web_tools: bool = True
 
     # Workspace paths
     cwd: str = "./workspace"
@@ -46,10 +47,10 @@ class Settings(BaseSettings):
     # Vision settings
     vision_support: bool = False
 
-    # API server settings
-    api_enabled: bool = True
-    api_host: str = "localhost"
-    api_port: int = 8017
+    # WebUI server settings
+    webui_enabled: bool = True
+    webui_host: str = "localhost"
+    webui_port: int = 8017
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"

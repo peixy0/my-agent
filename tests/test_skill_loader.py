@@ -1,6 +1,6 @@
 """Tests for SkillLoader."""
 
-from agent.tools.skill_loader import SkillLoader
+from agent.tools.skill import SkillLoader
 
 
 class TestSkillLoader:

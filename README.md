@@ -69,9 +69,9 @@ WAKE_INTERVAL_SECONDS=1800  # 30 minutes (default)
 TOOL_TIMEOUT=60  # seconds
 
 # HTTP API (Optional)
-API_ENABLED=true
-API_HOST=localhost
-API_PORT=8000
+WEBUI_ENABLED=true
+WEBUI_HOST=localhost
+WEBUI_PORT=8000
 
 # Feishu Integration (Optional)
 FEISHU_APP_ID=your_app_id

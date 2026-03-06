@@ -56,11 +56,11 @@ This document specifies a system-level autonomous LLM agent. The agent runs on t
 - Validates structured responses against JSON schemas
 - **Does NOT** handle tool registration or system prompt construction (SRP)
 
-### SystemPromptBuilder (`agent/llm/prompt_builder.py`)
+### SystemPromptBuilder (`agent/llm/prompt.py`)
 - Builds the system prompt from settings, skills, and runtime context
 - Separated from Agent for single responsibility
 
-### ToolRegistry (`agent/tools/tool_registry.py`)
+### ToolRegistry (`agent/tools/registry.py`)
 - Holds tool name → (handler, schema) mappings
 - Wraps handlers with timeout and error handling
 - Adding new tools requires only a `register()` call (OCP)
@@ -123,8 +123,8 @@ Settings are managed via `pydantic-settings` and loaded from `.env`:
 | `container_runtime` | `podman` | Container runtime |
 | `workspace_dir` | `./workspace` | Host workspace path |
 | `wake_interval_seconds` | `1800` | Wake cycle interval |
-| `api_host` | `0.0.0.0` | API server bind address |
-| `api_port` | `8000` | API server port |
+| `webui_host` | `0.0.0.0` | API server bind address |
+| `webui_port` | `8000` | API server port |
 
 ## 6. Skills
 
@@ -162,15 +162,15 @@ sys-agent/
 │   │   ├── agent.py              # Agent conversation loop
 │   │   ├── factory.py            # Client factory
 │   │   ├── openai.py             # OpenAI implementation
-│   │   └── prompt_builder.py     # System prompt construction
+│   │   └── prompt.py             # System prompt construction
 │   ├── messaging/
 │   │   ├── feishu.py             # Feishu source + sender
 │   │   ├── source.py             # MessageSource factory
 │   │   └── websocket.py          # WebSocketSender
 │   └── tools/
-│       ├── tool_registry.py      # Tool registration (OCP)
+│       ├── registry.py           # Tool registration (OCP)
 │       ├── toolbox.py            # Tool implementations
-│       └── skill_loader.py       # Skill discovery
+│       └── skill.py              # Skill discovery
 ├── tests/
 │   ├── test_api.py
 │   ├── test_agent_compress.py

@@ -14,8 +14,8 @@ from ddgs import DDGS
 from agent.core.runtime import Runtime
 from agent.core.sender import MessageSender
 from agent.core.settings import Settings
-from agent.tools.skill_loader import SkillLoader
-from agent.tools.tool_registry import ToolRegistry
+from agent.tools.registry import ToolRegistry
+from agent.tools.skill import SkillLoader
 
 logger = logging.getLogger(__name__)
 
@@ -23,19 +23,10 @@ logger = logging.getLogger(__name__)
 def register_default_tools(
     registry: ToolRegistry,
     runtime: Runtime,
-    skill_loader: SkillLoader,
+    skill: SkillLoader,
     settings: Settings,
 ) -> None:
     """Declaratively register all default tools into the registry."""
-
-    async def run_command(command: str) -> dict[str, Any]:
-        """
-        Executes a shell command in the workspace container.
-
-        Use this tool to explore the filesystem, run scripts, or execute
-        any shell command. The command runs in /workspace inside the container.
-        """
-        return await runtime.execute(command)
 
     async def web_search(query: str) -> dict[str, Any]:
         """
@@ -65,6 +56,15 @@ def register_default_tools(
             return {"status": "success", "output": output}
         except Exception as e:
             return {"status": "error", "message": str(e)}
+
+    async def run_command(command: str) -> dict[str, Any]:
+        """
+        Executes a shell command in the workspace container.
+
+        Use this tool to explore the filesystem, run scripts, or execute
+        any shell command. The command runs in /workspace inside the container.
+        """
+        return await runtime.execute(command)
 
     async def write_file(filename: str, content: str) -> dict[str, Any]:
         """
@@ -104,18 +104,44 @@ def register_default_tools(
         Use this when you identify a relevant skill from your available skills list.
         Skills provide detailed instructions for specific tasks.
         """
-        skill = skill_loader.load_skill(skill_name)
-        if not skill:
+        loaded_skill = skill.load_skill(skill_name)
+        if not loaded_skill:
             return {"status": "error", "message": f"Skill '{skill_name}' not found"}
         return {
             "status": "success",
             "skill": {
-                "name": skill.name,
-                "skill_dir": skill.skill_dir,
-                "description": skill.description,
-                "instructions": skill.instructions,
+                "name": loaded_skill.name,
+                "skill_dir": loaded_skill.skill_dir,
+                "description": loaded_skill.description,
+                "instructions": loaded_skill.instructions,
             },
         }
+
+    if settings.enable_web_tools:
+        registry.register(
+            web_search,
+            {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "The search query."}
+                },
+                "required": ["query"],
+            },
+        )
+
+        registry.register(
+            fetch,
+            {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "The URL of the web page to fetch.",
+                    }
+                },
+                "required": ["url"],
+            },
+        )
 
     registry.register(
         run_command,
@@ -128,31 +154,6 @@ def register_default_tools(
                 }
             },
             "required": ["command"],
-        },
-    )
-
-    registry.register(
-        web_search,
-        {
-            "type": "object",
-            "properties": {
-                "query": {"type": "string", "description": "The search query."}
-            },
-            "required": ["query"],
-        },
-    )
-
-    registry.register(
-        fetch,
-        {
-            "type": "object",
-            "properties": {
-                "url": {
-                    "type": "string",
-                    "description": "The URL of the web page to fetch.",
-                }
-            },
-            "required": ["url"],
         },
     )
 

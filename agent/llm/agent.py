@@ -17,7 +17,7 @@ import jsonschema
 
 from agent.core.sender import MessageSender
 from agent.llm.openai import OpenAIProvider
-from agent.tools.tool_registry import ToolRegistry
+from agent.tools.registry import ToolRegistry
 from agent.tools.toolbox import register_human_input_tools
 
 logger = logging.getLogger(__name__)

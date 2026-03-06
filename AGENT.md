@@ -81,7 +81,7 @@ async def my_tool_handler(param1: str, param2: int) -> dict[str, Any]:
 
 **Step 2**: Register in `register_default_tools()` by passing the function and its **parameters** schema (not a full `{"type": "function", ...}` wrapper):
 ```python
-def register_default_tools(registry: ToolRegistry, runtime, skill_loader, settings):
+def register_default_tools(registry: ToolRegistry, runtime, skill, settings):
     # ... existing tools ...
     registry.register(
         my_tool_handler,
@@ -219,7 +219,7 @@ while self.running:
 - `AppWithDependencies` accepts `Settings` for testing
 
 ```python
-def test_tool_registry():
+def test_registry():
     registry = ToolRegistry(tool_timeout=10)
 
     async def handler() -> dict:
@@ -319,14 +319,14 @@ agent/
 │   ├── agent.py                 # Conversation loop
 │   ├── factory.py               # LLM client factory
 │   ├── openai.py                # OpenAI implementation
-│   └── prompt_builder.py        # System prompt construction
+│   └── prompt.py                # System prompt construction
 ├── messaging/
 │   ├── feishu.py                # Feishu source + sender
 │   ├── source.py                # MessageSource factory
 │   └── websocket.py             # WebSocketSender
 └── tools/
-    ├── skill_loader.py          # Skill discovery
-    ├── tool_registry.py         # Tool registration (OCP)
+    ├── skill.py                 # Skill discovery
+    ├── registry.py              # Tool registration (OCP)
     └── toolbox.py               # Tool implementations
 ```
 

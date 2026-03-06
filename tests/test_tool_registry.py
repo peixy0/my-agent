@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from agent.tools.tool_registry import ToolRegistry
+from agent.tools.registry import ToolRegistry
 
 
 class TestToolRegistry:

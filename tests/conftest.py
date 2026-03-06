@@ -17,6 +17,6 @@ def mock_settings():
         workspace_dir="/tmp/test-workspace",
         skills_dir="/tmp/test-workspace/.skills",
         wake_interval_seconds=60,
-        api_host="127.0.0.1",
-        api_port=8999,
+        webui_host="127.0.0.1",
+        webui_port=8999,
     )

@@ -9,15 +9,15 @@ import platform
 from pathlib import Path
 
 from agent.core.settings import Settings
-from agent.tools.skill_loader import SkillLoader
+from agent.tools.skill import SkillLoader
 
 
 class SystemPromptBuilder:
     """Builds the system prompt for the agent."""
 
-    def __init__(self, settings: Settings, skill_loader: SkillLoader):
+    def __init__(self, settings: Settings, skill: SkillLoader):
         self._settings = settings
-        self._skill_loader = skill_loader
+        self._skill = skill
 
     def build(self) -> str:
         """Build the full system prompt with current datetime and skills."""
@@ -36,7 +36,7 @@ class SystemPromptBuilder:
             except FileNotFoundError:
                 pass
 
-        skill_summaries = self._skill_loader.discover_skills()
+        skill_summaries = self._skill.discover_skills()
         skills_text = ""
         if skill_summaries:
             skills_text = "Available specialized skills:\n"

@@ -15,10 +15,10 @@ from agent.core.sender import MessageSource
 from agent.core.settings import Settings
 from agent.llm.agent import Agent
 from agent.llm.factory import LLMFactory
-from agent.llm.prompt_builder import SystemPromptBuilder
+from agent.llm.prompt import SystemPromptBuilder
 from agent.messaging.source import create_message_source
-from agent.tools.skill_loader import SkillLoader
-from agent.tools.tool_registry import ToolRegistry
+from agent.tools.registry import ToolRegistry
+from agent.tools.skill import SkillLoader
 from agent.tools.toolbox import register_default_tools
 
 logger = logging.getLogger(__name__)
@@ -45,12 +45,12 @@ class AppWithDependencies:
             if self.settings.container_runtime
             else HostRuntime()
         )
-        self.skill_loader = SkillLoader(self.settings.skills_dir)
+        self.skill = SkillLoader(self.settings.skills_dir)
         self.tool_registry = ToolRegistry(
             tool_timeout=self.settings.tool_timeout,
         )
         register_default_tools(
-            self.tool_registry, self.runtime, self.skill_loader, self.settings
+            self.tool_registry, self.runtime, self.skill, self.settings
         )
 
         # Message source (inbound)
@@ -71,7 +71,7 @@ class AppWithDependencies:
             self.model_name,
             self.tool_registry,
         )
-        self.prompt_builder = SystemPromptBuilder(self.settings, self.skill_loader)
+        self.prompt = SystemPromptBuilder(self.settings, self.skill)
 
         self._background_tasks: list[asyncio.Task] = []
 

@@ -28,8 +28,8 @@ from agent.core.events import (
 from agent.core.sender import MessageSender
 from agent.core.settings import Settings
 from agent.llm.agent import Agent, HeartbeatOrchestrator, HumanInputOrchestrator
-from agent.llm.prompt_builder import SystemPromptBuilder
-from agent.tools.tool_registry import ToolRegistry
+from agent.llm.prompt import SystemPromptBuilder
+from agent.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ class SchedulerContext(Protocol):
     model_name: str
     agent: Agent
     tool_registry: ToolRegistry
-    prompt_builder: SystemPromptBuilder
+    prompt: SystemPromptBuilder
     event_queue: asyncio.Queue  # type: ignore[type-arg]
 
 
@@ -126,7 +126,7 @@ class ConversationWorker:
         if event.interval_seconds <= 0:
             return
         logger.info("Processing heartbeat")
-        prompt = self.app.prompt_builder.build_for_heartbeat()
+        prompt = self.app.prompt.build_for_heartbeat()
         now = datetime.now().astimezone()
         current_datetime = now.strftime("%Y-%m-%d %H:%M:%S %Z%z")
         messages = [
@@ -173,7 +173,7 @@ Timezone: {now.tzinfo}
         )
         logger.info(f"Processing text input: {event.message[:100]}...")
 
-        prompt = self.app.prompt_builder.build_with_previous_summary(
+        prompt = self.app.prompt.build_with_previous_summary(
             self.conversation.previous_summary
         )
         orchestrator = HumanInputOrchestrator(
@@ -234,7 +234,7 @@ Timezone: {now.tzinfo}
         )
         logger.info("Processing image input")
 
-        prompt = self.app.prompt_builder.build_with_previous_summary(
+        prompt = self.app.prompt.build_with_previous_summary(
             self.conversation.previous_summary
         )
         orchestrator = HumanInputOrchestrator(
