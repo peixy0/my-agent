@@ -1,7 +1,7 @@
 import logging
 from typing import Any
 
-from agent.messaging.sender import MessageSender
+from agent.core.sender import MessageSender
 
 logger = logging.getLogger(__name__)
 

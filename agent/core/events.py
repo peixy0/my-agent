@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 
-from agent.messaging.sender import MessageSender
+from agent.core.sender import MessageSender
 
 
 @dataclass

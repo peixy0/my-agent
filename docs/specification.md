@@ -45,7 +45,7 @@ This document specifies a system-level autonomous LLM agent. The agent runs on t
 
 ## 3. Core Components
 
-### AppWithDependencies (`agent/app.py`)
+### AppWithDependencies (`agent/engine/app.py`)
 - **Composition root** — single place where all dependencies are wired
 - Creates: Settings → runtime → ToolRegistry → OpenAIProvider → Agent → Messaging → ApiService
 - `run()` method starts all background tasks (messaging, API server)
@@ -76,20 +76,27 @@ This document specifies a system-level autonomous LLM agent. The agent runs on t
 - All file operations (read/write/edit) also execute in container
 - Dependency injection enables testing
 
-### Scheduler (`agent/main.py`)
-- Event-driven loop processing `HeartbeatEvent` and `HumanInputEvent`
-- Dispatches to appropriate handler based on event type
+### Scheduler (`agent/engine/scheduler.py`)
+- `Scheduler` consumes from the shared event queue and dispatches to per-chat `ConversationWorker` tasks
+- `ConversationWorker` owns a private queue, processes its events sequentially; conversations run concurrently
+- `SchedulerContext` Protocol decouples the scheduler from `AppWithDependencies` — no upward import needed
+- Handles `TextInputEvent`, `ImageInputEvent`, `HeartbeatEvent`, `NewSessionEvent`, `DropSessionEvent`
+- `/heartbeat [seconds]` and `/new` commands are translated to typed events inside `Scheduler._dispatch`
+- `DropSessionEvent` tears down a worker (e.g. on WebSocket disconnect)
 
 ### ApiService (`agent/api/server.py`)
 - `ApiService` ABC with `NullApiService` and `UvicornApiService` implementations
 - `UvicornApiService` wraps FastAPI with uvicorn server
-- `POST /api/bot` — accepts human input, queues `HumanInputEvent`
+- `WS /api/bot` — WebSocket endpoint; each connection gets its own `chat_id` session
 - `GET /api/health` — health check
+- Queues `TextInputEvent` / `ImageInputEvent` on message; queues `DropSessionEvent` on disconnect
 - Shares `asyncio.Queue` with Scheduler for event delivery
 
-### Messaging (`agent/core/messaging.py`)
-- `Messaging` ABC with `NullMessaging` and `FeishuMessaging` implementations
-- `FeishuMessaging` accepts explicit `FeishuMessagingConfig` (DIP — no global settings)
+### Sender abstractions (`agent/core/sender.py`)
+- `MessageSender` ABC — bound reply handle for a single conversation turn
+- `MessageSource` ABC — background task that receives inbound messages
+- `NullSender` / `NullSource` — no-op implementations
+- Lives in `core/` so events and scheduler can depend on it without reaching into `messaging/`
 
 ## 4. Tools
 
@@ -140,63 +147,87 @@ Skills are discovered at startup and injected into the system prompt.
 ```
 sys-agent/
 ├── agent/
+│   ├── main.py                   # Entry point only
+│   ├── engine/
+│   │   ├── app.py                # Composition root (AppWithDependencies)
+│   │   └── scheduler.py          # Scheduler, ConversationWorker, SchedulerContext
 │   ├── api/
-│   │   ├── __init__.py
-│   │   └── server.py          # ApiService ABC + FastAPI endpoints
+│   │   └── server.py             # ApiService ABC + FastAPI + WebSocket
 │   ├── core/
-│   │   ├── events.py          # Event types
-│   │   ├── runtime.py         # Command runtime
-│   │   ├── messaging.py       # Messaging ABC + implementations
-│   │   └── settings.py        # Configuration
+│   │   ├── sender.py             # MessageSender/MessageSource abstractions
+│   │   ├── events.py             # Event types
+│   │   ├── runtime.py            # Command runtime
+│   │   └── settings.py           # Configuration
 │   ├── llm/
-│   │   ├── agent.py           # Agent conversation loop
-│   │   ├── factory.py         # Client factory
-│   │   ├── openai.py          # OpenAI implementation
-│   │   └── prompt_builder.py  # System prompt construction
-│   ├── tools/
-│   │   ├── tool_registry.py  # Tool registration (OCP)
-│   │   ├── toolbox.py        # Tool implementations
-│   │   └── skill_loader.py   # Skill discovery
-│   ├── app.py                # Composition root (DI)
-│   └── main.py               # Entry point + Scheduler
+│   │   ├── agent.py              # Agent conversation loop
+│   │   ├── factory.py            # Client factory
+│   │   ├── openai.py             # OpenAI implementation
+│   │   └── prompt_builder.py     # System prompt construction
+│   ├── messaging/
+│   │   ├── feishu.py             # Feishu source + sender
+│   │   ├── source.py             # MessageSource factory
+│   │   └── websocket.py          # WebSocketSender
+│   └── tools/
+│       ├── tool_registry.py      # Tool registration (OCP)
+│       ├── toolbox.py            # Tool implementations
+│       └── skill_loader.py       # Skill discovery
 ├── tests/
-│   ├── test_api.py               # API endpoint tests
-│   ├── test_agent_compress.py    # Agent compress() tests
-│   ├── test_command_executor.py  # Runtime execution tests
-│   ├── test_skill_loader.py      # SkillLoader tests
-│   └── test_tool_registry.py     # ToolRegistry tests
-├── workspace/                # Persisted workspace
-├── Containerfile             # Workspace container image
-└── run-container.sh          # Container management
+│   ├── test_api.py
+│   ├── test_agent_compress.py
+│   ├── test_command_executor.py
+│   ├── test_skill_loader.py
+│   └── test_tool_registry.py
+├── workspace/                    # Persisted workspace
+├── Containerfile                 # Workspace container image
+└── run-container.sh              # Container management
 ```
 
-## 8. Design Principles
+## 8. Dependency Graph
+
+One-way, no cycles:
+
+```
+core/           sender, events, settings, runtime   (no agent imports)
+  ↑
+tools/          → core/
+llm/            → core/, tools/
+messaging/      → core/
+api/            → core/, messaging/websocket
+  ↑
+engine/         → core/, llm/, tools/, messaging/, api/
+  ↑
+main.py         → engine/, core/settings
+```
+
+## 9. Design Principles
 
 - **Single Responsibility**: Each class has one clear purpose (Agent ≠ ToolRegistry ≠ PromptBuilder)
 - **Open/Closed**: New tools added via `ToolRegistry.register()` — no existing code changes
-- **Liskov Substitution**: `Runtime` implementations are interchangeable; `Messaging` implementations are interchangeable
-- **Interface Segregation**: `Runtime` protocol is focused; `Messaging` ABC is minimal
-- **Dependency Inversion**: Core depends on abstractions (`OpenAIProvider`, `Runtime`, `Messaging`, `ApiService`), not concretions. No module-level singletons — everything wired via composition root.
+- **Liskov Substitution**: `Runtime` implementations are interchangeable; `MessageSource` implementations are interchangeable
+- **Interface Segregation**: `Runtime` protocol is focused; `MessageSender` ABC is minimal
+- **Dependency Inversion**: Core depends on abstractions, not concretions. No module-level singletons — everything wired via composition root.
 
-## 9. HTTP API
+## 10. HTTP / WebSocket API
 
-### POST /api/bot
-Accept human input for agent processing.
+### WS /api/bot
+WebSocket endpoint. Each connection creates a new `chat_id` session.
 
-**Request:**
+Inbound frames:
 ```json
-{"chat_id": "<chat_id>", "message_id": "<message_id>", "message": "Your message to the agent"}
+{"type": "text",  "message": "...", "message_id": "..."}
+{"type": "image", "data": "<base64>", "mime_type": "image/jpeg", "message_id": "..."}
 ```
 
-**Response:**
+Outbound frames:
 ```json
-{"status": "queued"}
+{"type": "connected",  "chat_id": "..."}
+{"type": "message",    "chat_id": "...", "text": "..."}
+{"type": "image_path", "chat_id": "...", "path": "..."}
 ```
+
+On disconnect a `DropSessionEvent` is queued, tearing down the worker.
 
 ### GET /api/health
-Health check endpoint.
+Health check.
 
-**Response:**
-```json
-{"status": "ok"}
-```
+**Response:** `{"status": "ok"}`

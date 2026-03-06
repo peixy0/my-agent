@@ -15,8 +15,8 @@ from typing import Any, cast, override
 
 import jsonschema
 
+from agent.core.sender import MessageSender
 from agent.llm.openai import OpenAIProvider
-from agent.messaging.sender import MessageSender
 from agent.tools.tool_registry import ToolRegistry
 from agent.tools.toolbox import register_human_input_tools
 

@@ -1,3 +1,11 @@
+"""
+Abstract sender and source interfaces.
+
+These live in ``core`` so the lowest layers (events, scheduler) can depend on
+them without reaching into the ``messaging`` package.  Concrete implementations
+are in ``agent.messaging``.
+"""
+
 from abc import ABC, abstractmethod
 
 

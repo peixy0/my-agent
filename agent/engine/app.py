@@ -11,11 +11,11 @@ import os
 
 from agent.api.server import ApiService, create_api_service
 from agent.core.runtime import ContainerRuntime, HostRuntime
+from agent.core.sender import MessageSource
 from agent.core.settings import Settings
 from agent.llm.agent import Agent
 from agent.llm.factory import LLMFactory
 from agent.llm.prompt_builder import SystemPromptBuilder
-from agent.messaging.sender import MessageSource
 from agent.messaging.source import create_message_source
 from agent.tools.skill_loader import SkillLoader
 from agent.tools.tool_registry import ToolRegistry

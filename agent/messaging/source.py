@@ -1,8 +1,8 @@
 import asyncio
 
 from agent.core.runtime import Runtime
+from agent.core.sender import MessageSource, NullSource
 from agent.core.settings import Settings
-from agent.messaging.sender import MessageSource, NullSource
 
 
 def create_message_source(

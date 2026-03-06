@@ -13,25 +13,29 @@ The agent follows **SOLID principles** with emphasis on:
 ### Core Components
 
 ```
-AppWithDependencies (app.py)
+engine/AppWithDependencies (engine/app.py)
   ├── Settings (configuration)
   ├── ContainerRuntime (command execution)
   ├── ToolRegistry (tool management)
   ├── OpenAIProvider (OpenAI-compatible API)
   ├── Agent (conversation loop)
-  ├── Messaging (Feishu/Null)
+  ├── MessageSource (Feishu/Null)
   └── ApiService (FastAPI/Null)
 
-Scheduler (main.py)
-  ├── HeartbeatEvent → autonomous wake cycles
-  └── HumanInputEvent → API-triggered interactions
+Scheduler (engine/scheduler.py)
+  ├── ConversationWorker  — per-chat, sequential processing
+  ├── HeartbeatEvent      → autonomous wake cycles
+  ├── TextInputEvent      → human chat messages
+  ├── ImageInputEvent     → image messages
+  ├── NewSessionEvent     → reset conversation
+  └── DropSessionEvent    → tear down worker (e.g. WS disconnect)
 ```
 
 ## Composition Root Pattern
 
 `AppWithDependencies` is the **single place** where all dependencies are wired together. This eliminates scattered singletons and makes the dependency graph explicit and testable.
 
-**Location**: `agent/app.py`
+**Location**: `agent/engine/app.py`
 
 ```python
 class AppWithDependencies:
@@ -185,25 +189,26 @@ Core logic depends on **abstractions**, not concretions:
 
 ## Event-Driven Scheduler
 
-**Location**: `agent/main.py`
+**Location**: `agent/engine/scheduler.py`
 
-The `Scheduler` processes two event types:
+Event types in `agent/core/events.py`:
 
-1. **HeartbeatEvent**: Periodic autonomous wake-ups
-   - Triggered by `_schedule_heartbeat()` after each cycle
-   - Agent works on tasks, decides whether to report to user
+| Event | Trigger |
+|---|---|
+| `TextInputEvent` | Inbound chat message |
+| `ImageInputEvent` | Inbound image message |
+| `HeartbeatEvent` | `/heartbeat [seconds]` command or recurring timer |
+| `NewSessionEvent` | `/new` command — resets conversation history |
+| `DropSessionEvent` | WebSocket disconnect — cancels the worker |
 
-2. **HumanInputEvent**: API-triggered interactions
-   - Queued by `POST /api/bot` endpoint
-   - Agent processes immediately, responds via messaging
+`Scheduler` routes each event to a `ConversationWorker` keyed by `chat_id`. Workers process events sequentially; different chats run concurrently.
+
+`SchedulerContext` is a `Protocol` that captures only what the scheduler needs from the app — `AppWithDependencies` satisfies it structurally, avoiding any import of `engine/app.py` from `engine/scheduler.py`.
 
 ```python
 while self.running:
     event = await self.app.event_queue.get()
-    if isinstance(event, HeartbeatEvent):
-        await self._process_heartbeat()
-    elif isinstance(event, HumanInputEvent):
-        await self._process_human_input(event)
+    await self._dispatch(event)
     self.app.event_queue.task_done()
 ```
 
@@ -299,24 +304,45 @@ uv run ruff format . && uv run ruff check . && uv run basedpyright && uv run pyt
 
 ```
 agent/
-├── app.py                   # Composition root (AppWithDependencies)
-├── main.py                  # Entry point, Scheduler
+├── main.py                      # Entry point only
+├── engine/
+│   ├── app.py                   # Composition root (AppWithDependencies)
+│   └── scheduler.py             # Scheduler, ConversationWorker, SchedulerContext
 ├── api/
-│   └── server.py           # ApiService abstraction + FastAPI
+│   └── server.py                # ApiService abstraction + FastAPI + WebSocket
 ├── core/
-│   ├── events.py           # Event types (HeartbeatEvent, HumanInputEvent)
-│   ├── runtime.py          # Container command execution
-│   ├── messaging.py        # Messaging abstraction (Feishu, Null)
-│   └── settings.py         # Configuration (Pydantic)
+│   ├── sender.py                # MessageSender/MessageSource abstractions
+│   ├── events.py                # Event types
+│   ├── runtime.py               # Container command execution
+│   └── settings.py              # Configuration (Pydantic)
 ├── llm/
-│   ├── agent.py            # Conversation loop
-│   ├── factory.py          # LLM client factory
-│   ├── openai.py           # OpenAI implementation
-│   └── prompt_builder.py   # System prompt construction
+│   ├── agent.py                 # Conversation loop
+│   ├── factory.py               # LLM client factory
+│   ├── openai.py                # OpenAI implementation
+│   └── prompt_builder.py        # System prompt construction
+├── messaging/
+│   ├── feishu.py                # Feishu source + sender
+│   ├── source.py                # MessageSource factory
+│   └── websocket.py             # WebSocketSender
 └── tools/
-    ├── skill_loader.py      # Skill discovery
-    ├── tool_registry.py     # Tool registration (OCP)
-    └── toolbox.py           # Tool implementations
+    ├── skill_loader.py          # Skill discovery
+    ├── tool_registry.py         # Tool registration (OCP)
+    └── toolbox.py               # Tool implementations
+```
+
+### Dependency graph (one-way, no cycles)
+
+```
+core/     sender, events, settings, runtime   (no agent imports)
+  ↑
+tools/    → core/
+llm/      → core/, tools/
+messaging/ → core/
+api/      → core/, messaging/websocket
+  ↑
+engine/   → core/, llm/, tools/, messaging/, api/
+  ↑
+main.py   → engine/, core/settings
 ```
 
 ## References

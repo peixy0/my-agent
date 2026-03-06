@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     # API server settings
     api_enabled: bool = True
     api_host: str = "localhost"
-    api_port: int = 8005
+    api_port: int = 8017
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"

@@ -10,7 +10,7 @@ import lark_oapi as lark
 
 from agent.core.events import ImageInputEvent, TextInputEvent
 from agent.core.runtime import Runtime
-from agent.messaging.sender import MessageSender, MessageSource
+from agent.core.sender import MessageSender, MessageSource
 
 logger = logging.getLogger(__name__)
 

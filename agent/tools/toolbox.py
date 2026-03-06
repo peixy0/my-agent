@@ -12,8 +12,8 @@ import trafilatura
 from ddgs import DDGS
 
 from agent.core.runtime import Runtime
+from agent.core.sender import MessageSender
 from agent.core.settings import Settings
-from agent.messaging.sender import MessageSender
 from agent.tools.skill_loader import SkillLoader
 from agent.tools.tool_registry import ToolRegistry
 

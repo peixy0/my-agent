@@ -62,7 +62,7 @@ OPENAI_API_KEY=your_api_key_here
 
 # Container Settings
 CONTAINER_NAME=sys-agent-workspace
-CONTAINER_RUNTIME=podman  # or docker
+CONTAINER_RUNTIME=podman  # or "docker", or omit for host runtime
 
 # Agent Behavior
 WAKE_INTERVAL_SECONDS=1800  # 30 minutes (default)
@@ -70,7 +70,7 @@ TOOL_TIMEOUT=60  # seconds
 
 # HTTP API (Optional)
 API_ENABLED=true
-API_HOST=0.0.0.0
+API_HOST=localhost
 API_PORT=8000
 
 # Feishu Integration (Optional)
