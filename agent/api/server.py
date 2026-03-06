@@ -25,7 +25,7 @@ import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 
-from agent.core.events import ImageInputEvent, TextInputEvent
+from agent.core.events import DropSessionEvent, ImageInputEvent, TextInputEvent
 from agent.core.settings import Settings
 from agent.messaging.websocket import WebSocketSender
 
@@ -154,6 +154,9 @@ def create_api(event_queue: asyncio.Queue) -> FastAPI:
             logger.info(f"WebSocket disconnected: chat_id={chat_id}")
         except Exception as e:
             logger.error(f"WebSocket error [{chat_id}]: {e}", exc_info=True)
+        finally:
+            await event_queue.put(DropSessionEvent(chat_id=chat_id))
+            logger.debug(f"DropSessionEvent queued for chat_id={chat_id}")
 
     @app.get("/api/health")
     async def health_check() -> dict:

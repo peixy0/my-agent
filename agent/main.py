@@ -6,6 +6,7 @@ Runs the Scheduler (event loop) and FastAPI server concurrently.
 
 import asyncio
 import base64
+import contextlib
 import logging
 from dataclasses import dataclass
 from datetime import datetime
@@ -18,6 +19,7 @@ except ImportError:  # pragma: no cover
 
 from agent.app import AppWithDependencies
 from agent.core.events import (
+    DropSessionEvent,
     HeartbeatEvent,
     ImageInputEvent,
     NewSessionEvent,
@@ -29,7 +31,7 @@ from agent.messaging.sender import MessageSender
 
 logger = logging.getLogger("agent")
 
-AgentEvent = TextInputEvent | ImageInputEvent
+AgentEvent = TextInputEvent | ImageInputEvent | DropSessionEvent
 WorkerEvent = HeartbeatEvent | NewSessionEvent | TextInputEvent | ImageInputEvent
 
 
@@ -310,6 +312,17 @@ class Scheduler:
                 await self._get_or_create_worker(event.chat_id).queue.put(
                     NewSessionEvent(chat_id=event.chat_id, sender=event.sender)
                 )
+            elif isinstance(event, DropSessionEvent):
+                if event.chat_id in self._workers:
+                    worker, task = self._workers.pop(event.chat_id)
+                    task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await task
+                    logger.info(f"Dropped session worker for chat_id={event.chat_id}")
+                else:
+                    logger.debug(
+                        f"DropSessionEvent for unknown chat_id={event.chat_id}"
+                    )
             else:
                 worker = self._get_or_create_worker(event.chat_id)
                 await worker.queue.put(event)

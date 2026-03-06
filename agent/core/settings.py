@@ -18,7 +18,7 @@ class Settings(BaseSettings):
 
     # Container settings
     container_name: str = "sys-agent-workspace"
-    container_runtime: str = "podman"
+    container_runtime: str = ""  # "docker" or "podman", run on host if empty
 
     # Agent settings
     tool_timeout: int = 60
@@ -47,9 +47,9 @@ class Settings(BaseSettings):
     vision_support: bool = False
 
     # API server settings
-    api_enabled: bool = False
-    api_host: str = "0.0.0.0"
-    api_port: int = 8000
+    api_enabled: bool = True
+    api_host: str = "localhost"
+    api_port: int = 8005
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"

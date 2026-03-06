@@ -32,3 +32,8 @@ class ImageInputEvent:
     sender: MessageSender
     mime_type: str = field(default="image/jpeg")
     message: str = field(default="")
+
+
+@dataclass
+class DropSessionEvent:
+    chat_id: str
