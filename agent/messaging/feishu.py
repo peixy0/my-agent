@@ -39,14 +39,25 @@ class FeishuSender(MessageSender):
         self._message_id = message_id
 
     async def send(self, text: str) -> None:
+        card = {
+            "schema": "2.0",
+            "body": {
+                "elements": [
+                    {
+                        "tag": "markdown",
+                        "content": text,
+                    }
+                ]
+            },
+        }
         request = (
             lark.im.v1.CreateMessageRequest.builder()
             .receive_id_type("chat_id")
             .request_body(
                 lark.im.v1.CreateMessageRequestBody.builder()
                 .receive_id(self._chat_id)
-                .msg_type("text")
-                .content(json.dumps({"text": text}))
+                .msg_type("interactive")
+                .content(json.dumps(card))
                 .build()
             )
             .build()
@@ -146,39 +157,6 @@ class FeishuSource(MessageSource):
     def _make_sender(self, chat_id: str, message_id: str = "") -> FeishuSender:
         return FeishuSender(self._client, self._runtime, chat_id, message_id)
 
-    def _get_referenced_message(
-        self, message_id: str | None, prefix: str = "> "
-    ) -> str:
-        if not message_id:
-            return ""
-        request = lark.im.v1.GetMessageRequest.builder().message_id(message_id).build()
-        response = self._client.im.v1.message.get(request)
-        if not response.success():
-            logger.error(
-                "Failed to get Feishu message: %s - %s", response.code, response.msg
-            )
-            return ""
-        try:
-            content = ""
-            items = response.data.items or []
-            for item in items:
-                parent_content = self._get_referenced_message(
-                    item.parent_id, prefix + prefix
-                )
-                content_json = item.body.content or "{}"
-                content_dict = json.loads(content_json)
-                lines = content_dict.get("text", "").splitlines()
-                content = f"{prefix}QUOTE:\n{prefix}\n" + "\n".join(
-                    [prefix + line for line in lines]
-                )
-                content = parent_content + content
-            if content:
-                content = content + "\n"
-            return content
-        except Exception as e:
-            logger.error("Failed to parse referenced message: %s", e)
-            return ""
-
     async def _download_and_queue_image(
         self, chat_id: str, message_id: str, image_key: str
     ) -> None:
@@ -236,7 +214,6 @@ class FeishuSource(MessageSource):
         text = content_dict.get("text", "")
         if not text:
             return
-        text = self._get_referenced_message(data.event.message.parent_id) + text
         asyncio.run_coroutine_threadsafe(
             self._event_queue.put(
                 TextInputEvent(
