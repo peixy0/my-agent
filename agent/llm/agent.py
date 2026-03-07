@@ -9,6 +9,7 @@ System prompt construction is handled by SystemPromptBuilder (SRP).
 import asyncio
 import json
 import logging
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, cast, override
@@ -150,6 +151,12 @@ class Orchestrator(ABC):
         return fixed
 
 
+def _strip_thought(content: str | None) -> str:
+    if not content:
+        return ""
+    return re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+
+
 class HeartbeatOrchestrator(Orchestrator):
     def __init__(
         self,
@@ -166,7 +173,7 @@ class HeartbeatOrchestrator(Orchestrator):
 
     @override
     async def _on_final_response(self, content: str) -> None:
-        content = content.strip()
+        content = _strip_thought(content)
         if content and not content.endswith("NO_REPORT"):
             await self._sender.send(content)
 
@@ -184,15 +191,13 @@ class HumanInputOrchestrator(Orchestrator):
 
     @override
     async def _before_tool_use(self, message: Any) -> None:
-        if not message.content:
-            return
-        content = message.content.strip()
+        content = _strip_thought(message.content)
         if content:
             await self.sender.send(content)
 
     @override
     async def _on_final_response(self, content: str) -> None:
-        content = content.strip()
+        content = _strip_thought(content)
         if content:
             await self.sender.send(content)
         else:
@@ -249,9 +254,9 @@ class Agent:
                 model=self.model,
                 messages=messages_to_be_sent,
                 tools=orchestrator.tool_registry.tool_schemas(),
-                temperature=0.6,
+                # temperature=0.6,
                 top_p=0.95,
-                extra_body={"chat_template_kwargs": {"enable_thinking": True}},
+                # extra_body={"chat_template_kwargs": {"enable_thinking": True}},
             )
 
             logger.debug(f"LLM Response: {response}")

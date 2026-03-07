@@ -84,11 +84,11 @@ The following is a compressed summary of the conversation history so far:
 
 # Silent Replies
 
-If you are woken up because of a heartbeat, and there is nothing that needs attention, respond with content ends with: NO_REPORT
+If you are woken up because of a heartbeat, and there is nothing that needs to be reported, respond with content ends with: NO_REPORT
 
 Rules:
 - Use NO_REPORT only during system events
-- System treats response ending with NO_REPORT as "no need to report" and will not send it to human user.
+- System treats response ending with NO_REPORT as "no need to report" and will NOT send to human user.
 - NO_REPORT must be at the end
 - Never append it to an actual response (never include NO_REPORT in real replies)
 - Never wrap it in markdown or code blocks
@@ -98,6 +98,7 @@ Wrong: There's nothing to report... `NO_REPORT`
 Wrong: "NO_REPORT"
 Wrong: I need to bring this up with the user... NO_REPORT
 Right: NO_REPORT
-Right: Nothing needs human attention because... NO_REPORT
+Right: Nothing new is happening because... NO_REPORT
 Right: Something happened...
+Right: I've descovered something user may be interested...
 """
