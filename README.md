@@ -56,9 +56,16 @@ Create a `.env` file with your settings:
 
 ```env
 # LLM Configuration (Required)
+LLM_PROVIDER=openai  # or github-copilot
+
+# OpenAI provider
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=gpt-4o
 OPENAI_API_KEY=your_api_key_here
+
+# GitHub Copilot provider
+GITHUB_COPILOT_MODEL=gpt-4o
+GITHUB_COPILOT_STATE_PATH=.state/github-copilot.json
 
 # Container Settings
 CONTAINER_NAME=sys-agent-workspace
@@ -79,6 +86,8 @@ FEISHU_APP_SECRET=your_app_secret
 FEISHU_ENCRYPT_KEY=your_encrypt_key
 FEISHU_VERIFICATION_TOKEN=your_verification_token
 ```
+
+When `LLM_PROVIDER=github-copilot`, the agent starts a GitHub OAuth device-code login during boot if no cached token exists. It logs the verification URL and user code, then persists the GitHub OAuth token and exchanged Copilot session token to `GITHUB_COPILOT_STATE_PATH`.
 
 ### HTTP API
 

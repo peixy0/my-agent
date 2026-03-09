@@ -143,6 +143,4 @@ models/
 .skills
 
 workspace/
-
-events.jsonl
-.wake_count
+.state

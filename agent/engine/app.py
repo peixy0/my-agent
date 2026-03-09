@@ -63,20 +63,20 @@ class AppWithDependencies:
             self.settings, self.event_queue
         )
 
-        # Agent
-        self.llm_client = LLMFactory(self.settings).create()
-        self.model_name = self.settings.openai_model
+        self.prompt = SystemPromptBuilder(self.settings, self.skill)
+        self._background_tasks: list[asyncio.Task] = []
+
+    async def run(self) -> None:
+        """Acquire LLM credentials, then start dependent background tasks."""
+        llm_factory = LLMFactory(self.settings)
+        self.llm_client = await llm_factory.create()
+        self.model_name = llm_factory.get_model_name()
         self.agent = Agent(
             self.llm_client,
             self.model_name,
             self.tool_registry,
         )
-        self.prompt = SystemPromptBuilder(self.settings, self.skill)
 
-        self._background_tasks: list[asyncio.Task] = []
-
-    async def run(self) -> None:
-        """Start dependent background tasks (messaging, API server)."""
         os.chdir(self.settings.cwd)
 
         self._background_tasks = [

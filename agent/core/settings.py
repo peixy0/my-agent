@@ -12,9 +12,24 @@ class Settings(BaseSettings):
     """
 
     # LLM settings
+    llm_provider: str = "openai"
+
     openai_base_url: str = "https://api.openai.com/v1"
     openai_model: str = "gpt-4o"
     openai_api_key: str = ""
+
+    github_copilot_model: str = "gpt-4o"
+    github_copilot_oauth_client_id: str = "Iv1.b507a08c87ecfe98"
+    github_copilot_scope: str = "read:user"
+    github_copilot_device_code_url: str = "https://github.com/login/device/code"
+    github_copilot_access_token_url: str = "https://github.com/login/oauth/access_token"
+    github_copilot_token_url: str = "https://api.github.com/copilot_internal/v2/token"
+    github_copilot_api_base_url: str = "https://api.githubcopilot.com"
+    github_copilot_state_path: str = ".state/github-copilot.json"
+    github_copilot_user_agent: str = "my-agent/0.1.0"
+    github_copilot_editor_version: str = "vscode/1.99.0"
+    github_copilot_editor_plugin_version: str = "my-agent/0.1.0"
+    github_copilot_openai_intent: str = "conversation-panel"
 
     # Container settings
     container_name: str = "sys-agent-workspace"

@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from agent.llm.agent import Agent
+from agent.llm.types import ChoiceView, CompletionResponseView, MessageView, UsageView
 
 
 def _make_agent() -> Agent:
@@ -20,15 +21,17 @@ def _make_agent() -> Agent:
     )
 
 
-def _make_completion_response(content: str) -> MagicMock:
-    """Build a minimal mock that looks like an OpenAI completion response."""
-    message = MagicMock()
-    message.content = content
-    choice = MagicMock()
-    choice.message = message
-    response = MagicMock()
-    response.choices = [choice]
-    return response
+def _make_completion_response(content: str) -> CompletionResponseView:
+    """Build a minimal completion response for testing."""
+    return CompletionResponseView(
+        choices=[
+            ChoiceView(
+                message=MessageView(role="assistant", content=content, tool_calls=[]),
+                finish_reason="stop",
+            )
+        ],
+        usage=UsageView(),
+    )
 
 
 @pytest.mark.asyncio

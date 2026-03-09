@@ -9,7 +9,53 @@ from tenacity import (
     wait_exponential,
 )
 
+from agent.llm.types import (
+    ChoiceView,
+    CompletionResponseView,
+    MessageView,
+    ToolCallFunctionView,
+    ToolCallView,
+    UsageView,
+)
+
 logger = logging.getLogger(__name__)
+
+
+def _normalize(response: Any) -> CompletionResponseView:
+    choices = []
+    for index, choice in enumerate(response.choices):
+        msg = choice.message
+        tool_calls = [
+            ToolCallView(
+                id=tc.id,
+                type=tc.type,
+                function=ToolCallFunctionView(
+                    name=tc.function.name,
+                    arguments=tc.function.arguments,
+                ),
+            )
+            for tc in (msg.tool_calls or [])
+        ]
+        choices.append(
+            ChoiceView(
+                index=index,
+                finish_reason=choice.finish_reason or "stop",
+                message=MessageView(
+                    role=msg.role,
+                    content=msg.content,
+                    tool_calls=tool_calls,
+                ),
+            )
+        )
+    usage = response.usage
+    return CompletionResponseView(
+        choices=choices,
+        usage=UsageView(
+            total_tokens=usage.total_tokens if usage else 0,
+            prompt_tokens=usage.prompt_tokens if usage else 0,
+            completion_tokens=usage.completion_tokens if usage else 0,
+        ),
+    )
 
 
 class OpenAIProvider:
@@ -32,11 +78,8 @@ class OpenAIProvider:
         wait=wait_exponential(multiplier=2, min=5, max=300),
         before_sleep=before_sleep_log(logger, logging.WARNING),
     )
-    async def do_completion(self, *args: Any, **kwargs: Any) -> Any:
-        """
-        Performs a chat completion with rate limiting and retry logic using tenacity.
-        """
+    async def do_completion(self, *args: Any, **kwargs: Any) -> CompletionResponseView:
         response = await self.client.chat.completions.create(*args, **kwargs)
         if not response.choices:
             raise Exception("Invalid response")
-        return response
+        return _normalize(response)

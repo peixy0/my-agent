@@ -27,7 +27,11 @@ from agent.core.events import (
 )
 from agent.core.sender import MessageSender
 from agent.core.settings import Settings
-from agent.llm.agent import Agent, HeartbeatOrchestrator, HumanInputOrchestrator
+from agent.llm.agent import (
+    Agent,
+    HeartbeatOrchestrator,
+    HumanInputOrchestrator,
+)
 from agent.llm.prompt import SystemPromptBuilder
 from agent.tools.registry import ToolRegistry
 

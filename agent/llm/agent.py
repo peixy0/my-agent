@@ -12,16 +12,22 @@ import logging
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, cast, override
+from typing import Any, Protocol, override
 
 import jsonschema
 
 from agent.core.sender import MessageSender
-from agent.llm.openai import OpenAIProvider
+from agent.llm.types import CompletionResponseView, MessageView, ToolCallView
 from agent.tools.registry import ToolRegistry
 from agent.tools.toolbox import register_human_input_tools
 
 logger = logging.getLogger(__name__)
+
+
+class CompletionClient(Protocol):
+    async def do_completion(
+        self, *args: Any, **kwargs: Any
+    ) -> CompletionResponseView: ...
 
 
 @dataclass
@@ -53,7 +59,7 @@ class Orchestrator(ABC):
         self.tool_registry.register(func, schema, name=name, description=description)
 
     @abstractmethod
-    async def _before_tool_use(self, message: Any) -> None:
+    async def _before_tool_use(self, message: MessageView) -> None:
         """Hook called before tool results are collected. Override for extra behaviour."""
         pass
 
@@ -62,7 +68,9 @@ class Orchestrator(ABC):
         """Handle the final (non-tool-call) LLM response."""
         pass
 
-    async def process(self, message: Any, finish_reason: str) -> list[dict[str, str]]:
+    async def process(
+        self, message: MessageView, finish_reason: str
+    ) -> list[dict[str, str]]:
         if message.tool_calls:
             await self._before_tool_use(message)
             tool_results = await asyncio.gather(
@@ -81,13 +89,13 @@ class Orchestrator(ABC):
         if finish_reason != "stop":
             return [{"role": "user", "content": "continue"}]
 
-        content = message.content or ""
-        await self._on_final_response(content)
+        await self._on_final_response(message.content or "")
         return []
 
-    async def _handle_tool_call(self, tool_call: Any) -> ToolCallResult:
+    async def _handle_tool_call(self, tool_call: ToolCallView) -> ToolCallResult:
         tool_name = tool_call.function.name
         tool_id = tool_call.id
+        raw_arguments = tool_call.function.arguments
 
         handler = self.tool_registry.get_handler(tool_name)
         if handler is None:
@@ -101,12 +109,10 @@ class Orchestrator(ABC):
                 },
             )
 
-        logger.debug(
-            f"Executing tool {tool_name} with args: {tool_call.function.arguments}"
-        )
+        logger.debug(f"Executing tool {tool_name} with args: {raw_arguments}")
         args: dict[str, Any] = {}
         try:
-            args = json.loads(tool_call.function.arguments)
+            args = json.loads(raw_arguments)
             if self.model.startswith("deepseek-ai/"):
                 args = self._fix_deepseek_args(args)
             schema = self.tool_registry.get_schema(tool_name)
@@ -168,7 +174,7 @@ class HeartbeatOrchestrator(Orchestrator):
         self._sender = sender
 
     @override
-    async def _before_tool_use(self, message: Any) -> None:
+    async def _before_tool_use(self, message: MessageView) -> None:
         pass
 
     @override
@@ -190,7 +196,7 @@ class HumanInputOrchestrator(Orchestrator):
         register_human_input_tools(self.tool_registry, sender)
 
     @override
-    async def _before_tool_use(self, message: Any) -> None:
+    async def _before_tool_use(self, message: MessageView) -> None:
         content = _strip_thought(message.content)
         if content:
             await self.sender.send(content)
@@ -216,7 +222,7 @@ class Agent:
 
     def __init__(
         self,
-        llm_client: OpenAIProvider,
+        llm_client: CompletionClient,
         model: str,
         tool_registry: ToolRegistry,
     ):
@@ -260,8 +266,9 @@ class Agent:
             )
 
             logger.debug(f"LLM Response: {response}")
-            message = response.choices[0].message
-            finish_reason = response.choices[0].finish_reason
+            choice = response.choices[0]
+            message = choice.message
+            finish_reason = choice.finish_reason
             messages.append(message.model_dump())
 
             reply = await orchestrator.process(message, finish_reason)
@@ -348,7 +355,7 @@ class Agent:
                 continue
 
             if tool_calls:
-                for tc in cast(list[dict[str, Any]], tool_calls):
+                for tc in tool_calls:
                     tc_id = str(tc.get("id") or "")
                     name = tc.get("function", {}).get("name", "unknown")
                     raw_args = tc.get("function", {}).get("arguments") or ""
@@ -384,6 +391,6 @@ class Agent:
             top_p=1.0,
         )
 
-        summary: str = response.choices[0].message.content or ""
+        summary = response.choices[0].message.content or ""
         logger.info(f"Conversation compressed to {response.usage.total_tokens} tokens")
         return summary.strip()
