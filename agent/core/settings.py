@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     github_copilot_token_url: str = "https://api.github.com/copilot_internal/v2/token"
     github_copilot_api_base_url: str = "https://api.githubcopilot.com"
     github_copilot_state_path: str = ".state/github-copilot.json"
+    github_copilot_models_path: str = ".state/github-copilot-models.json"
     github_copilot_user_agent: str = "my-agent/0.1.0"
     github_copilot_editor_version: str = "vscode/1.99.0"
     github_copilot_editor_plugin_version: str = "my-agent/0.1.0"

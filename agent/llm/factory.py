@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from agent.llm.copilot import (
     GitHubCopilotAuthManager,
     GitHubCopilotAuthStore,
@@ -46,7 +48,7 @@ class LLMFactory:
                 editor_plugin_version=self.settings.github_copilot_editor_plugin_version,
             )
             await auth_manager.ensure_copilot_token()
-            return GitHubCopilotProvider(
+            provider = GitHubCopilotProvider(
                 api_base_url=self.settings.github_copilot_api_base_url,
                 auth_manager=auth_manager,
                 proxy=self.settings.proxy,
@@ -55,6 +57,12 @@ class LLMFactory:
                 editor_plugin_version=self.settings.github_copilot_editor_plugin_version,
                 openai_intent=self.settings.github_copilot_openai_intent,
             )
+            models_path = (
+                Path(self.settings.workspace_dir).expanduser().resolve()
+                / self.settings.github_copilot_models_path
+            ).resolve()
+            await provider.fetch_and_save_models(models_path)
+            return provider
 
         return OpenAIProvider(
             url=self.settings.openai_base_url,

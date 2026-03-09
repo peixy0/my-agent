@@ -31,6 +31,7 @@ def _make_completion_response(content: str) -> CompletionResponseView:
             )
         ],
         usage=UsageView(),
+        model="test-model",
     )
 
 

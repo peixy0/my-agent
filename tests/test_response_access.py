@@ -44,6 +44,7 @@ def test_completion_response_view_defaults():
             )
         ],
         usage=UsageView(),
+        model="test-model",
     )
     assert response.choices[0].message.content == "hi"
     assert response.usage.total_tokens == 0

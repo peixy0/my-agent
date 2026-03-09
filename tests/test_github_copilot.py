@@ -98,10 +98,16 @@ async def test_factory_creates_github_copilot_provider(tmp_path):
     )
 
     factory = LLMFactory(settings)
-    with patch(
-        "agent.llm.copilot.GitHubCopilotAuthManager.ensure_copilot_token",
-        new_callable=AsyncMock,
-        return_value="mocked-token",
+    with (
+        patch(
+            "agent.llm.copilot.GitHubCopilotAuthManager.ensure_copilot_token",
+            new_callable=AsyncMock,
+            return_value="mocked-token",
+        ),
+        patch(
+            "agent.llm.copilot.GitHubCopilotProvider.fetch_and_save_models",
+            new_callable=AsyncMock,
+        ),
     ):
         provider = await factory.create()
 

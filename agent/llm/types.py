@@ -58,3 +58,4 @@ class UsageView:
 class CompletionResponseView:
     choices: list[ChoiceView]
     usage: UsageView
+    model: str

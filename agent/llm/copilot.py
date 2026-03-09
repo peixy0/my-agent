@@ -250,6 +250,36 @@ class GitHubCopilotProvider:
         self._editor_plugin_version = editor_plugin_version
         self._openai_intent = openai_intent
 
+    async def fetch_and_save_models(self, models_path: Path) -> None:
+        """Fetch available models from the Copilot API and persist them to disk."""
+        token = await self._auth_manager.ensure_copilot_token()
+        timeout = aiohttp.ClientTimeout(total=30)
+        async with (
+            aiohttp.ClientSession(timeout=timeout) as session,
+            session.get(
+                f"{self._api_base_url}/models",
+                headers={
+                    "Accept": "application/json",
+                    "Authorization": f"Bearer {token}",
+                    "User-Agent": self._user_agent,
+                    "editor-version": self._editor_version,
+                    "editor-plugin-version": self._editor_plugin_version,
+                    "openai-intent": self._openai_intent,
+                },
+                proxy=self._proxy,
+            ) as response,
+        ):
+            response.raise_for_status()
+            payload: dict[str, Any] = await response.json()
+
+        models_path.parent.mkdir(parents=True, exist_ok=True)
+        models_path.write_text(
+            json.dumps(payload, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        model_ids = [m.get("id") for m in payload.get("data", [])]
+        logger.info("Copilot models saved to %s: %s", models_path, model_ids)
+
     @retry(
         retry=retry_if_not_exception_type(CopilotBadRequestError),
         wait=wait_exponential(multiplier=2, min=5, max=300),
@@ -337,4 +367,5 @@ class GitHubCopilotProvider:
                 completion_tokens=int(usage_payload.get("completion_tokens", 0) or 0),
                 total_tokens=int(usage_payload.get("total_tokens", 0) or 0),
             ),
+            model=body.get("model", ""),
         )
