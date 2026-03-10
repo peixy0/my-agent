@@ -1,4 +1,5 @@
 import logging
+from asyncio.exceptions import CancelledError
 from typing import Any
 
 from openai import AsyncOpenAI, BadRequestError, DefaultAioHttpClient
@@ -75,7 +76,7 @@ class OpenAIProvider:
         )
 
     @retry(
-        retry=retry_if_not_exception_type(BadRequestError),
+        retry=retry_if_not_exception_type((BadRequestError, CancelledError)),
         wait=wait_exponential(multiplier=2, min=5, max=300),
         before_sleep=before_sleep_log(logger, logging.WARNING),
     )

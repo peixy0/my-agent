@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from asyncio.exceptions import CancelledError
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -281,7 +282,7 @@ class GitHubCopilotProvider:
         logger.info("Copilot models saved to %s: %s", models_path, model_ids)
 
     @retry(
-        retry=retry_if_not_exception_type(CopilotBadRequestError),
+        retry=retry_if_not_exception_type((CopilotBadRequestError, CancelledError)),
         wait=wait_exponential(multiplier=2, min=5, max=300),
         before_sleep=before_sleep_log(logger, logging.WARNING),
     )

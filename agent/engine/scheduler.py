@@ -330,6 +330,11 @@ class Scheduler:
                 await self._get_or_create_worker(event.chat_id).queue.put(
                     NewSessionEvent(chat_id=event.chat_id, sender=event.sender)
                 )
+            elif isinstance(event, TextInputEvent) and event.message.startswith(
+                "/drop"
+            ):
+                await event.sender.send(f"Dropping session chat_id={event.chat_id}")
+                await self.app.event_queue.put(DropSessionEvent(chat_id=event.chat_id))
             elif isinstance(event, DropSessionEvent):
                 if event.chat_id in self._workers:
                     worker, task = self._workers.pop(event.chat_id)
