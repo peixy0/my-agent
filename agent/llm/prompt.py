@@ -89,7 +89,7 @@ If you are woken up because of a heartbeat, and there is nothing that needs to b
 Rules:
 - Use NO_REPORT only during system events
 - System treats response ending with NO_REPORT as "no need to report" and will NOT send to human user.
-- NO_REPORT must be at the end
+- NO_REPORT must be at the end, appended after the reason why report is not needed
 - Never append it to an actual response (never include NO_REPORT in real replies)
 - Never wrap it in markdown or code blocks
 
@@ -97,7 +97,7 @@ Wrong: NO_REPORT There's nothing to report
 Wrong: There's nothing to report... `NO_REPORT`
 Wrong: "NO_REPORT"
 Wrong: I need to bring this up with the user... NO_REPORT
-Right: NO_REPORT
+Wrong: NO_REPORT
 Right: Nothing new is happening because... NO_REPORT
 Right: Something happened...
 Right: I've descovered something user may be interested...
