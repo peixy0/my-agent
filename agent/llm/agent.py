@@ -17,7 +17,12 @@ from typing import Any, Protocol, override
 import jsonschema
 
 from agent.core.sender import MessageSender
-from agent.llm.types import CompletionResponseView, MessageView, ToolCallView
+from agent.llm.types import (
+    CompletionResponseView,
+    MessageView,
+    ToolCallView,
+    ToolContent,
+)
 from agent.tools.registry import ToolRegistry
 from agent.tools.toolbox import register_human_input_tools
 
@@ -35,7 +40,7 @@ class ToolCallResult:
     tool_id: str
     tool_name: str
     args: dict[str, Any]
-    result: dict[str, Any]
+    result: ToolContent
 
 
 class Orchestrator(ABC):
@@ -80,7 +85,7 @@ class Orchestrator(ABC):
                 {
                     "role": "tool",
                     "tool_call_id": tool_result.tool_id,
-                    "content": json.dumps(tool_result.result, ensure_ascii=False),
+                    "content": tool_result.result.to_lm_content(),
                 }
                 for tool_result in tool_results
             ]
@@ -103,14 +108,15 @@ class Orchestrator(ABC):
                 tool_id,
                 tool_name,
                 {},
-                {
-                    "status": "error",
-                    "message": f"No such tool named {tool_name}",
-                },
+                ToolContent.from_dict(
+                    "error",
+                    {"message": f"No such tool named {tool_name}"},
+                ),
             )
 
         logger.debug(f"Executing tool {tool_name} with args: {raw_arguments}")
         args: dict[str, Any] = {}
+        tool_content: ToolContent
         try:
             args = json.loads(raw_arguments)
             if self.model.startswith("deepseek-ai/"):
@@ -118,29 +124,31 @@ class Orchestrator(ABC):
             schema = self.tool_registry.get_schema(tool_name)
             if schema:
                 jsonschema.validate(instance=args, schema=schema["parameters"])
-            result: dict[str, Any] = await handler(**args)
+            tool_content = await handler(**args)
         except json.JSONDecodeError as e:
-            result = {
-                "status": "error",
-                "message": f"Invalid JSON in tool call arguments: {e}",
-            }
+            tool_content = ToolContent.from_dict(
+                "error",
+                {"message": f"Invalid JSON in tool call arguments: {e}"},
+            )
         except jsonschema.ValidationError as e:
-            result = {
-                "status": "error",
-                "message": f"Invalid tool call arguments: {e.message}",
-            }
+            tool_content = ToolContent.from_dict(
+                "error",
+                {"message": f"Invalid tool call arguments: {e.message}"},
+            )
         except Exception as e:
-            result = {
-                "status": "error",
-                "message": f"Exception occured during tool call: {e}",
-            }
+            tool_content = ToolContent.from_dict(
+                "error",
+                {"message": f"Exception occured during tool call: {e}"},
+            )
 
-        if result.get("status") == "error":
-            logger.error(f"Tool call {tool_name} failed: {result}")
+        if tool_content.status == "error":
+            logger.error(
+                f"Tool call {tool_name} failed: {tool_content.to_lm_content()}"
+            )
         else:
             logger.debug(f"Tool call {tool_name} completed successfully")
 
-        return ToolCallResult(tool_id, tool_name, args, result)
+        return ToolCallResult(tool_id, tool_name, args, tool_content)
 
     @staticmethod
     def _fix_deepseek_args(args: dict[str, Any]) -> dict[str, Any]:

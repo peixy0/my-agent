@@ -5,7 +5,9 @@ All file and command operations are delegated to the Runtime,
 which executes them inside the workspace container.
 """
 
+import base64
 import logging
+from pathlib import Path
 from typing import Any, cast
 
 import trafilatura
@@ -14,10 +16,20 @@ from ddgs import DDGS
 from agent.core.runtime import Runtime
 from agent.core.sender import MessageSender
 from agent.core.settings import Settings
+from agent.llm.types import ToolContent
 from agent.tools.registry import ToolRegistry
 from agent.tools.skill import SkillLoader
 
 logger = logging.getLogger(__name__)
+
+
+_MIME_TYPES: dict[str, str] = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+}
 
 
 def register_default_tools(
@@ -28,7 +40,7 @@ def register_default_tools(
 ) -> None:
     """Declaratively register all default tools into the registry."""
 
-    async def web_search(query: str) -> dict[str, Any]:
+    async def web_search(query: str) -> ToolContent:
         """
         Performs a web search using DuckDuckGo.
 
@@ -40,11 +52,11 @@ def register_default_tools(
                 proxy = settings.proxy
             with cast(Any, DDGS(proxy=proxy, timeout=60)) as ddgs:  # pyright: ignore[reportCallIssue]
                 results = [r for r in ddgs.text(query, max_results=7)]
-                return {"status": "success", "results": results}
+                return ToolContent.from_dict("success", {"results": results})
         except Exception as e:
-            return {"status": "error", "message": str(e)}
+            return ToolContent.from_dict("error", {"message": str(e)})
 
-    async def fetch(url: str) -> dict[str, Any]:
+    async def fetch(url: str) -> ToolContent:
         """
         Fetches and extracts the main content from a web page.
 
@@ -53,40 +65,55 @@ def register_default_tools(
         try:
             downloaded = trafilatura.fetch_url(url)
             output = trafilatura.extract(downloaded)
-            return {"status": "success", "output": output}
+            return ToolContent.from_dict("success", {"output": output})
         except Exception as e:
-            return {"status": "error", "message": str(e)}
+            return ToolContent.from_dict("error", {"message": str(e)})
 
-    async def run_command(command: str) -> dict[str, Any]:
+    async def run_command(command: str) -> ToolContent:
         """
         Executes a shell command in the workspace container.
 
         Use this tool to explore the filesystem, run scripts, or execute
         any shell command. The command runs in /workspace inside the container.
         """
-        return await runtime.execute(command)
+        try:
+            result = await runtime.execute(command)
+            return ToolContent.from_dict("success", result)
+        except Exception as e:
+            return ToolContent.from_dict("error", {"message": str(e)})
 
-    async def write_file(filename: str, content: str) -> dict[str, Any]:
+    async def write_file(filename: str, content: str) -> ToolContent:
         """
         Write content to a file in the workspace container.
 
         The filename should be relative to /workspace or an absolute path.
         Parent directories will be created if they don't exist.
         """
-        return await runtime.write_file(filename, content)
+        try:
+            return ToolContent.from_dict(
+                "success", await runtime.write_file(filename, content)
+            )
+        except Exception as e:
+            return ToolContent.from_dict("error", {"message": str(e)})
 
     async def read_file(
         filename: str, start_line: int = 1, limit: int = 200
-    ) -> dict[str, Any]:
+    ) -> ToolContent:
         """
         Read content from a file in the workspace container.
 
         The filename should be relative to /workspace or an absolute path.
         Returns max 200 lines. Use start_line to read further.
         """
-        return await runtime.read_file(filename, start_line=start_line, limit=limit)
+        try:
+            return ToolContent.from_dict(
+                "success",
+                await runtime.read_file(filename, start_line=start_line, limit=limit),
+            )
+        except Exception as e:
+            return ToolContent.from_dict("error", {"message": str(e)})
 
-    async def edit_file(filename: str, edits: list[dict[str, str]]) -> dict[str, Any]:
+    async def edit_file(filename: str, edits: list[dict[str, str]]) -> ToolContent:
         """
         Surgically edit a file by replacing specific blocks of text. Use this for precise code modifications.
 
@@ -95,9 +122,54 @@ def register_default_tools(
         2. Provide just enough context in SEARCH to be unique.
         3. If multiple changes are needed, provide multiple edit blocks.
         """
-        return await runtime.edit_file(filename, edits)
+        try:
+            return ToolContent.from_dict(
+                "success", await runtime.edit_file(filename, edits)
+            )
+        except Exception as e:
+            return ToolContent.from_dict("error", {"message": str(e)})
 
-    async def use_skill(skill_name: str) -> dict[str, Any]:
+    async def read_image(filename: str) -> ToolContent:
+        """
+        Read an image file.
+
+        Supported formats: PNG, JPEG, GIF, WebP.
+        The image is returned as a vision content block.
+        """
+
+        ext = Path(filename).suffix.lower()
+        mime = _MIME_TYPES.get(ext)
+        if mime is None:
+            return ToolContent.from_dict(
+                "error",
+                {
+                    "message": f"Unsupported image format '{ext}'. Supported: {', '.join(_MIME_TYPES)}"
+                },
+            )
+        try:
+            data = await runtime.read_file_internal(filename)
+            if len(data) > settings.max_image_size_bytes:
+                mb = settings.max_image_size_bytes / (1024 * 1024)
+                return ToolContent.from_dict(
+                    "error",
+                    {
+                        "message": f"Image exceeds size limit of {mb:.0f} MB ({len(data)} bytes)."
+                    },
+                )
+            b64 = base64.b64encode(data).decode("ascii")
+            return ToolContent.from_blocks(
+                [
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{mime};base64,{b64}"},
+                        "detail": "low",
+                    }
+                ]
+            )
+        except Exception as e:
+            return ToolContent.from_dict("error", {"message": str(e)})
+
+    async def use_skill(skill_name: str) -> ToolContent:
         """
         Load instructions for a specialized skill.
 
@@ -106,16 +178,20 @@ def register_default_tools(
         """
         loaded_skill = skill.load_skill(skill_name)
         if not loaded_skill:
-            return {"status": "error", "message": f"Skill '{skill_name}' not found"}
-        return {
-            "status": "success",
-            "skill": {
-                "name": loaded_skill.name,
-                "skill_dir": loaded_skill.skill_dir,
-                "description": loaded_skill.description,
-                "instructions": loaded_skill.instructions,
+            return ToolContent.from_dict(
+                "error", {"message": f"Skill '{skill_name}' not found"}
+            )
+        return ToolContent.from_dict(
+            "success",
+            {
+                "skill": {
+                    "name": loaded_skill.name,
+                    "skill_dir": loaded_skill.skill_dir,
+                    "description": loaded_skill.description,
+                    "instructions": loaded_skill.instructions,
+                },
             },
-        }
+        )
 
     if settings.enable_web_tools:
         registry.register(
@@ -229,6 +305,21 @@ def register_default_tools(
         },
     )
 
+    if settings.vision_support:
+        registry.register(
+            read_image,
+            {
+                "type": "object",
+                "properties": {
+                    "filename": {
+                        "type": "string",
+                        "description": "Path to the image file. Supported formats: PNG, JPEG, GIF, WebP.",
+                    }
+                },
+                "required": ["filename"],
+            },
+        )
+
     registry.register(
         use_skill,
         {
@@ -250,19 +341,18 @@ def register_human_input_tools(
 ) -> None:
     """Register tools that are only available during human-input interactions."""
 
-    async def add_reaction(emoji: str) -> dict[str, Any]:
+    async def add_reaction(emoji: str) -> ToolContent:
         """
         React to the current message with an emoji.
         """
         try:
             await sender.react(emoji)
-            return {
-                "status": "success",
-                "message": f"Added reaction {emoji} to message",
-            }
+            return ToolContent.from_dict(
+                "success", {"message": f"Added reaction {emoji} to message"}
+            )
         except Exception as e:
             logger.error(f"Failed to add reaction {emoji}: {e}", exc_info=True)
-            return {"status": "error", "message": str(e)}
+            return ToolContent.from_dict("error", {"message": str(e)})
 
     registry.register(
         add_reaction,
@@ -291,18 +381,20 @@ def register_human_input_tools(
         },
     )
 
-    async def send_image(image_path: str) -> dict[str, Any]:
+    async def send_image(image_path: str) -> ToolContent:
         """
         Send an image file to the user. Image file size must be under 10 MiB.
         """
         try:
             await sender.send_image(image_path)
-            return {
-                "status": "success",
-                "message": f"Sent image {image_path} to user",
-            }
+            return ToolContent.from_dict(
+                "success",
+                {
+                    "message": f"Sent image {image_path} to user",
+                },
+            )
         except Exception as e:
-            return {"status": "error", "message": str(e)}
+            return ToolContent.from_dict("error", {"message": str(e)})
 
     registry.register(
         send_image,

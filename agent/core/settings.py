@@ -62,6 +62,7 @@ class Settings(BaseSettings):
 
     # Vision settings
     vision_support: bool = False
+    max_image_size_bytes: int = 5 * 1024 * 1024  # 5 MB
 
     # WebUI server settings
     webui_enabled: bool = True

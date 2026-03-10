@@ -584,6 +584,8 @@
   document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') closeLightbox();
   });
+
+  document.getElementById('server-url').value = `ws://${window.location.hostname}:8017/api/bot`;
 </script>
 </body>
 </html>

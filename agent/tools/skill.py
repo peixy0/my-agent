@@ -29,11 +29,9 @@ class SkillLoader:
     """Discovers and loads skills from a directory."""
 
     skills_dir: Final[Path]
-    _cache: Final[dict[str, Skill]]
 
     def __init__(self, skills_dir: str = ".skills"):
         self.skills_dir = Path(skills_dir)
-        self._cache = {}
 
     def discover_skills(self) -> list[SkillSummary]:
         """Return brief summaries of all available skills."""
@@ -64,9 +62,6 @@ class SkillLoader:
 
     def load_skill(self, name: str) -> Skill | None:
         """Load full skill instructions by name."""
-        if name in self._cache:
-            return self._cache[name]
-
         # Find the directory that contains a SKILL.md with this name
         for skill_file in self.skills_dir.glob("*/SKILL.md"):
             try:
@@ -83,7 +78,6 @@ class SkillLoader:
                         description=description,
                         instructions=content,
                     )
-                    self._cache[name] = skill
                     return skill
             except Exception as e:
                 logger.error(f"Failed to load skill {name} from {skill_file}: {e}")

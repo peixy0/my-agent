@@ -4,6 +4,7 @@ import asyncio
 
 import pytest
 
+from agent.llm.types import ToolContent, ToolJsonResult
 from agent.tools.registry import ToolRegistry
 
 
@@ -58,8 +59,11 @@ class TestToolRegistry:
         handler = registry.get_handler("slow_tool")
         assert handler is not None
         result = await handler()
-        assert result["status"] == "error"
-        assert "timed out" in result["message"]
+        assert isinstance(result, ToolContent)
+        assert result.status == "error"
+        assert isinstance(result.result, ToolJsonResult)
+        payload = result.result.result
+        assert "timed out" in payload["message"]
 
     @pytest.mark.asyncio
     async def test_handler_error_wrapping(self):
@@ -74,8 +78,11 @@ class TestToolRegistry:
         handler = registry.get_handler("bad_tool")
         assert handler is not None
         result = await handler()
-        assert result["status"] == "error"
-        assert "something broke" in result["message"]
+        assert isinstance(result, ToolContent)
+        assert result.status == "error"
+        assert isinstance(result.result, ToolJsonResult)
+        payload = result.result.result
+        assert "something broke" in payload["message"]
 
     @pytest.mark.asyncio
     async def test_handler_success(self):

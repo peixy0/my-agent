@@ -70,27 +70,6 @@ Full instructions here.
         assert skill.description == "Test description"
         assert "Full instructions here" in skill.instructions
 
-    def test_load_skill_caching(self, tmp_path):
-        """Test that loaded skills are cached."""
-        skill_dir = tmp_path / "cached-skill"
-        skill_dir.mkdir()
-        skill_file = skill_dir / "SKILL.md"
-        skill_file.write_text("""---
-name: cached-skill
-description: Cached
----
-Instructions
-""")
-
-        loader = SkillLoader(str(tmp_path))
-
-        # Load twice
-        skill1 = loader.load_skill("cached-skill")
-        skill2 = loader.load_skill("cached-skill")
-
-        # Should be same object from cache
-        assert skill1 is skill2
-
     def test_parse_frontmatter_missing(self, tmp_path):
         """Test parsing file without frontmatter."""
         loader = SkillLoader(str(tmp_path))

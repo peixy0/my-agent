@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from agent.core.runtime import (
+    AgentRuntimeException,
     ContainerRuntime,
     Runtime,
 )
@@ -24,7 +25,7 @@ class TestContainerRuntime:
         """Verify runtime validation on init."""
         with (
             patch("shutil.which", return_value=None),
-            pytest.raises(RuntimeError, match="not found in PATH"),
+            pytest.raises(AgentRuntimeException, match="not found in PATH"),
         ):
             ContainerRuntime("test-container", runtime="nonexistent")
 
@@ -41,8 +42,8 @@ class TestContainerRuntime:
         with patch("asyncio.create_subprocess_exec", return_value=mock_process):
             result = await runtime.execute("ls -la")
 
-        assert result["status"] == "success"
         assert result["stdout"] == "output\n"
+        assert result["return_code"] == 0
 
     @pytest.mark.asyncio
     async def test_execute_failure(self):
@@ -57,7 +58,6 @@ class TestContainerRuntime:
         with patch("asyncio.create_subprocess_exec", return_value=mock_process):
             result = await runtime.execute("bad-command")
 
-        assert result["status"] == "error"
         assert result["return_code"] == 1
         assert "error message" in result["stderr"]
 
@@ -81,7 +81,6 @@ class TestContainerRuntime:
         ):
             result = await runtime.read_file("test.txt", start_line=1, limit=2)
 
-        assert result["status"] == "success"
         assert result["content"] == "line 1\nline 2\n"
         assert result["total_lines"] == 10
         assert result["start_line"] == 1
@@ -102,7 +101,7 @@ class TestContainerRuntime:
         ) as mock_create:
             result = await runtime.write_file("test.txt", "content")
 
-        assert result["status"] == "success"
+        assert result["message"] == "Content saved to test.txt"
         assert mock_create.call_count == 2
         # Verify second call used stdin
         assert mock_create.call_args_list[1].kwargs["stdin"] == asyncio.subprocess.PIPE
@@ -124,13 +123,13 @@ class TestContainerRuntime:
         )  # "different content" in base64
         mock_process_base64.returncode = 0
 
-        with patch(
-            "asyncio.create_subprocess_exec",
-            side_effect=[mock_process_base64],
+        with (
+            patch(
+                "asyncio.create_subprocess_exec",
+                side_effect=[mock_process_base64],
+            ),
+            pytest.raises(AgentRuntimeException, match="Could not find exact match"),
         ):
-            result = await runtime.edit_file(
+            await runtime.edit_file(
                 "test.txt", [{"search": "original", "replace": "replaced"}]
             )
-
-        assert result["status"] == "error"
-        assert "could not find exact match" in result["message"].lower()

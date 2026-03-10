@@ -10,6 +10,8 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from agent.llm.types import ToolContent
+
 logger = logging.getLogger(__name__)
 
 
@@ -31,18 +33,20 @@ class ToolRegistry:
     ) -> Callable[..., Awaitable[Any]]:
         """Wrap a tool with timeout and error handling."""
 
-        async def wrapped_tool(**kwargs: Any) -> Any:
+        async def wrapped_tool(**kwargs: Any) -> ToolContent:
             try:
                 return await asyncio.wait_for(
                     func(**kwargs), timeout=self._tool_timeout
                 )
             except asyncio.TimeoutError:
-                return {
-                    "status": "error",
-                    "message": f"Tool {tool_name} timed out after {self._tool_timeout}s",
-                }
+                return ToolContent.from_dict(
+                    "error",
+                    {
+                        "message": f"Tool {tool_name} timed out after {self._tool_timeout}s"
+                    },
+                )
             except Exception as e:
-                return {"status": "error", "message": str(e)}
+                return ToolContent.from_dict("error", {"message": str(e)})
 
         return wrapped_tool
 
