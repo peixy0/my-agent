@@ -158,7 +158,7 @@ SYSTEM EVENT: Heartbeat""",
         self.conversation.message_ids.add(event.message_id)
 
         if (
-            self.app.settings.enable_context_auto_compression
+            self.app.settings.context_auto_compression_enabled
             and self.conversation.messages
             and self.conversation.total_tokens >= self.app.settings.context_max_tokens
         ):
@@ -205,7 +205,7 @@ Timezone: {now.tzinfo}
         self.conversation.message_ids.add(event.message_id)
 
         if (
-            self.app.settings.enable_context_auto_compression
+            self.app.settings.context_auto_compression_enabled
             and self.conversation.messages
             and self.conversation.total_tokens >= self.app.settings.context_max_tokens
         ):

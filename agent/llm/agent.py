@@ -52,17 +52,6 @@ class Orchestrator(ABC):
         self.model = model
         self.tool_registry = tool_registry.clone()
 
-    def register_tool(
-        self,
-        func: Any,
-        schema: dict[str, Any],
-        *,
-        name: str | None = None,
-        description: str | None = None,
-    ) -> None:
-        """Register a tool specific to this orchestrator instance."""
-        self.tool_registry.register(func, schema, name=name, description=description)
-
     @abstractmethod
     async def _before_tool_use(self, message: MessageView) -> None:
         """Hook called before tool results are collected. Override for extra behaviour."""

@@ -193,7 +193,7 @@ def register_default_tools(
             },
         )
 
-    if settings.enable_web_tools:
+    if settings.web_tools_enabled:
         registry.register(
             web_search,
             {

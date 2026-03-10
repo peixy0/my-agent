@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     # Agent settings
     tool_timeout: int = 60
     proxy: str = ""
-    enable_web_tools: bool = True
+    web_tools_enabled: bool = True
 
     # Workspace paths
     cwd: str = "./workspace"
@@ -50,9 +50,9 @@ class Settings(BaseSettings):
     wake_interval_seconds: int = 1800  # 30 minutes
 
     # Context compression settings
-    enable_context_auto_compression: bool = False
+    context_auto_compression_enabled: bool = False
     context_max_tokens: int = 100000
-    context_num_keep_last: int = 10
+    context_num_keep_last: int = 9
 
     # Feishu settings
     feishu_app_id: str = ""
