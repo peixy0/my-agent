@@ -46,9 +46,7 @@ class AppWithDependencies:
             else HostRuntime()
         )
         self.skill = SkillLoader(self.settings.skills_dir)
-        self.tool_registry = ToolRegistry(
-            tool_timeout=self.settings.tool_timeout,
-        )
+        self.tool_registry = ToolRegistry()
         register_default_tools(
             self.tool_registry, self.runtime, self.skill, self.settings
         )

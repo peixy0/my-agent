@@ -5,6 +5,7 @@ All file and command operations are delegated to the Runtime,
 which executes them inside the workspace container.
 """
 
+import asyncio
 import base64
 import logging
 from pathlib import Path
@@ -69,7 +70,7 @@ def register_default_tools(
         except Exception as e:
             return ToolContent.from_dict("error", {"message": str(e)})
 
-    async def run_command(command: str) -> ToolContent:
+    async def run_command(command: str, timeout: int = 60) -> ToolContent:
         """
         Executes a shell command in the workspace container.
 
@@ -77,8 +78,12 @@ def register_default_tools(
         any shell command. The command runs inside the container.
         """
         try:
-            result = await runtime.execute(command)
+            result = await asyncio.wait_for(runtime.execute(command), timeout=timeout)
             return ToolContent.from_dict("success", result)
+        except asyncio.TimeoutError:
+            return ToolContent.from_dict(
+                "error", {"message": f"Command timed out after {timeout}s"}
+            )
         except Exception as e:
             return ToolContent.from_dict("error", {"message": str(e)})
 
@@ -225,7 +230,11 @@ def register_default_tools(
                 "command": {
                     "type": "string",
                     "description": "The shell command to execute in the workspace container.",
-                }
+                },
+                "timeout": {
+                    "type": "integer",
+                    "description": "Timeout in seconds (default: 60).",
+                },
             },
             "required": ["command"],
         },

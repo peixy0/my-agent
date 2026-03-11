@@ -1,10 +1,7 @@
 """Tests for ToolRegistry."""
 
-import asyncio
-
 import pytest
 
-from agent.llm.types import ToolContent, ToolJsonResult
 from agent.tools.registry import ToolRegistry
 
 
@@ -13,7 +10,7 @@ class TestToolRegistry:
 
     def test_register_and_retrieve(self):
         """Test registering a tool and retrieving its schema and handler."""
-        registry = ToolRegistry(tool_timeout=5)
+        registry = ToolRegistry()
 
         async def my_tool(x: int) -> dict:
             """A test tool."""
@@ -44,45 +41,6 @@ class TestToolRegistry:
         schema = registry.get_schema("custom_name")
         assert schema is not None
         assert schema["description"] == "Custom desc"
-
-    @pytest.mark.asyncio
-    async def test_handler_timeout(self):
-        """Test that the timeout wrapper works."""
-        registry = ToolRegistry(tool_timeout=1)
-
-        async def slow_tool() -> dict:
-            await asyncio.sleep(10)
-            return {"status": "success"}
-
-        registry.register(slow_tool, {})
-
-        handler = registry.get_handler("slow_tool")
-        assert handler is not None
-        result = await handler()
-        assert isinstance(result, ToolContent)
-        assert result.status == "error"
-        assert isinstance(result.result, ToolJsonResult)
-        payload = result.result.result
-        assert "timed out" in payload["message"]
-
-    @pytest.mark.asyncio
-    async def test_handler_error_wrapping(self):
-        """Test that exceptions are wrapped into error dicts."""
-        registry = ToolRegistry()
-
-        async def bad_tool() -> dict:
-            raise ValueError("something broke")
-
-        registry.register(bad_tool, {})
-
-        handler = registry.get_handler("bad_tool")
-        assert handler is not None
-        result = await handler()
-        assert isinstance(result, ToolContent)
-        assert result.status == "error"
-        assert isinstance(result.result, ToolJsonResult)
-        payload = result.result.result
-        assert "something broke" in payload["message"]
 
     @pytest.mark.asyncio
     async def test_handler_success(self):
