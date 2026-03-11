@@ -24,17 +24,16 @@ class MessageSender(ABC):
     async def send_image(self, image_path: str) -> None: ...
 
     @abstractmethod
-    async def react(self, emoji: str) -> None:
-        """React to the bound message_id with *emoji*."""
-        ...
+    async def send_file(self, file_path: str) -> None: ...
 
-    async def start_thinking(self) -> None:  # noqa: B027
-        """Signal that the agent has started processing. Default: no-op."""
-        pass
+    @abstractmethod
+    async def react(self, emoji: str) -> None: ...
 
-    async def end_thinking(self) -> None:  # noqa: B027
-        """Signal that the agent has finished processing. Default: no-op."""
-        pass
+    @abstractmethod
+    async def start_thinking(self) -> None: ...
+
+    @abstractmethod
+    async def end_thinking(self) -> None: ...
 
 
 class MessageSource(ABC):

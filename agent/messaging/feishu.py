@@ -5,6 +5,7 @@ import io
 import json
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 
 import lark_oapi as lark
 
@@ -116,6 +117,55 @@ class FeishuSender(MessageSender):
                 f"Failed to send Feishu image message: {response.code} - {response.msg}"
             )
 
+    async def send_file(self, file_path: str) -> None:
+        try:
+            content = await self._runtime.read_file_internal(file_path)
+        except Exception as e:
+            logger.error("Failed to read file %s: %s", file_path, e)
+            raise
+
+        if not content:
+            raise Exception("File is empty.")
+        if len(content) > 1024 * 1024 * 20:
+            raise Exception("File size too large.")
+
+        buffer = io.BytesIO(content)
+        upload_request = (
+            lark.im.v1.CreateFileRequest.builder()
+            .request_body(
+                lark.im.v1.CreateFileRequestBody.builder()
+                .file_type("stream")
+                .file_name(Path(file_path).name)
+                .file(buffer)
+                .build()
+            )
+            .build()
+        )
+        upload_response = await self._client.im.v1.file.acreate(upload_request)
+        if not upload_response.success():
+            raise Exception(
+                f"Failed to upload file: {upload_response.code} - {upload_response.msg}"
+            )
+
+        file_key = upload_response.data.file_key
+        request = (
+            lark.im.v1.CreateMessageRequest.builder()
+            .receive_id_type("chat_id")
+            .request_body(
+                lark.im.v1.CreateMessageRequestBody.builder()
+                .receive_id(self._chat_id)
+                .msg_type("file")
+                .content(json.dumps({"file_key": file_key}))
+                .build()
+            )
+            .build()
+        )
+        response = await self._client.im.v1.message.acreate(request)
+        if not response.success():
+            raise Exception(
+                f"Failed to send Feishu file message: {response.code} - {response.msg}"
+            )
+
     async def react(self, emoji: str) -> None:
         if not self._message_id:
             return
@@ -132,6 +182,12 @@ class FeishuSender(MessageSender):
         response = await self._client.im.v1.message_reaction.acreate(request)
         if not response.success():
             logger.error("Failed to add reaction: %s - %s", response.code, response.msg)
+
+    async def start_thinking(self) -> None:
+        pass
+
+    async def end_thinking(self) -> None:
+        pass
 
 
 class FeishuSource(MessageSource):

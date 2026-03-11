@@ -30,8 +30,11 @@ class WebSocketSender(MessageSender):
         except Exception as e:
             logger.warning("WebSocket image send failed for %s: %s", self._chat_id, e)
 
+    async def send_file(self, file_path: str) -> None:
+        pass
+
     async def react(self, emoji: str) -> None:
-        pass  # reactions are not applicable to WebSocket sessions
+        pass
 
     async def start_thinking(self) -> None:
         try:

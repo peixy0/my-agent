@@ -407,3 +407,33 @@ def register_human_input_tools(
             "required": ["image_path"],
         },
     )
+
+    async def send_file(file_path: str) -> ToolContent:
+        """
+        Send a file to the user. File size must be under 20 MiB.
+        Send only when explicitly asked.
+        """
+        try:
+            await sender.send_file(file_path)
+            return ToolContent.from_dict(
+                "success",
+                {
+                    "message": f"Sent file {file_path} to user",
+                },
+            )
+        except Exception as e:
+            return ToolContent.from_dict("error", {"message": str(e)})
+
+    registry.register(
+        send_file,
+        {
+            "type": "object",
+            "properties": {
+                "file_path": {
+                    "type": "string",
+                    "description": "Absolute path to the file to send.",
+                }
+            },
+            "required": ["file_path"],
+        },
+    )
