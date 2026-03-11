@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Agent Chat</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -104,7 +106,7 @@
       word-break: break-word;
     }
     .bubble-row.user  .bubble { background: #1a1a2e; color: #fff; border-bottom-right-radius: 4px; }
-    .bubble-row.agent .bubble { background: #fff; color: #1a1a2e; border-bottom-left-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+    .bubble-row.agent .bubble { background: #fff; color: #1a1a2e; border-bottom-left-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,.08); position: relative; }
     .bubble-row.system .bubble {
       background: #e8eaf6;
       color: #555;
@@ -152,21 +154,77 @@
     .bubble-row.agent .avatar { background: #1a1a2e; color: #fff; }
     .bubble-row.user  .avatar { background: #4caf50; color: #fff; }
 
-    /* typing indicator */
-    .typing .bubble { background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.08); padding: 12px 16px; }
-    .typing-dots { display: flex; gap: 4px; align-items: center; height: 16px; }
-    .typing-dots span {
-      width: 6px; height: 6px;
+    /* copy button */
+    .copy-btn {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      width: 24px; height: 24px;
+      border: none;
+      border-radius: 5px;
+      background: rgba(0,0,0,.06);
+      color: #666;
+      cursor: pointer;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      transition: background 0.15s, color 0.15s;
+      flex-shrink: 0;
+    }
+    .bubble-row.agent .bubble:hover .copy-btn { display: flex; }
+    .copy-btn:hover { background: rgba(0,0,0,.14); color: #1a1a2e; }
+    .copy-btn.copied { background: #4caf50; color: #fff; }
+    .copy-btn svg { pointer-events: none; }
+
+    /* === Thinking indicator === */
+    #thinking-bar {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 16px;
+      background: #eef0ff;
+      flex-shrink: 0;
+      border-top: 2px solid #c5caf5;
+    }
+    #thinking-bar.visible { display: flex; }
+    #thinking-bar .thinking-label {
+      font-size: 0.85rem;
+      color: #3a3a8c;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    #thinking-bar .thinking-dots { display: flex; gap: 5px; align-items: center; }
+    #thinking-bar .thinking-dots span {
+      width: 8px; height: 8px;
       border-radius: 50%;
-      background: #999;
-      animation: bounce 1.2s infinite ease-in-out;
+      background: #5c6bc0;
+      animation: think-pulse 1.2s infinite ease-in-out;
     }
-    .typing-dots span:nth-child(2) { animation-delay: .2s; }
-    .typing-dots span:nth-child(3) { animation-delay: .4s; }
-    @keyframes bounce {
-      0%, 60%, 100% { transform: translateY(0); }
-      30%            { transform: translateY(-6px); }
+    #thinking-bar .thinking-dots span:nth-child(2) { animation-delay: .2s; }
+    #thinking-bar .thinking-dots span:nth-child(3) { animation-delay: .4s; }
+    @keyframes think-pulse {
+      0%, 60%, 100% { opacity: 0.25; transform: scale(0.85); }
+      30%            { opacity: 1;    transform: scale(1.35); }
     }
+
+    /* === Markdown content === */
+    .bubble.md-content { white-space: normal; }
+    .bubble.md-content p { margin: 0 0 0.5em; }
+    .bubble.md-content p:last-child { margin-bottom: 0; }
+    .bubble.md-content code { background: rgba(0,0,0,.08); padding: 1px 5px; border-radius: 4px; font-family: monospace; font-size: 0.85em; }
+    .bubble-row.user .bubble.md-content code { background: rgba(255,255,255,.2); }
+    .bubble.md-content pre { background: rgba(0,0,0,.06); border-radius: 8px; padding: 10px 12px; overflow-x: auto; margin: 0.4em 0; }
+    .bubble-row.user .bubble.md-content pre { background: rgba(255,255,255,.15); }
+    .bubble.md-content pre code { background: none; padding: 0; }
+    .bubble.md-content ul, .bubble.md-content ol { padding-left: 1.4em; margin: 0.4em 0; }
+    .bubble.md-content li { margin: 0.15em 0; }
+    .bubble.md-content h1, .bubble.md-content h2, .bubble.md-content h3 { margin: 0.6em 0 0.3em; font-size: 1em; font-weight: 700; }
+    .bubble.md-content blockquote { border-left: 3px solid #ccc; padding-left: 10px; color: #777; margin: 0.4em 0; }
+    .bubble.md-content a { color: #1a6ef5; }
+    .bubble-row.user .bubble.md-content a { color: #9ec8ff; }
+    .bubble.md-content table { border-collapse: collapse; margin: 0.4em 0; font-size: 0.85em; }
+    .bubble.md-content th, .bubble.md-content td { border: 1px solid #ddd; padding: 4px 8px; }
 
     /* === Image preview bar === */
     #img-preview-bar {
@@ -255,8 +313,9 @@
       outline: none;
       max-height: 140px;
       overflow-y: auto;
-      line-height: 1.4;
+      line-height: 1;
       font-family: inherit;
+      min-height: 2.75em;
     }
     #msg-input:focus { border-color: #1a1a2e; }
     #send-btn {
@@ -293,6 +352,12 @@
 </div>
 
 <div id="chat"></div>
+
+<!-- thinking indicator -->
+<div id="thinking-bar">
+  <div class="thinking-dots"><span></span><span></span><span></span></div>
+  <span class="thinking-label">Agent is thinking…</span>
+</div>
 
 <!-- staged image preview -->
 <div id="img-preview-bar">
@@ -332,7 +397,6 @@
   var ws = null;
   var chatId = null;
   var msgCounter = 0;
-  var typingRow = null;
   var stagedFile = null;
 
   var chat           = document.getElementById('chat');
@@ -376,21 +440,24 @@
         return;
       }
 
-      removeTyping();
-      if (data.type === 'message') {
+      if (data.type === 'thinking_start') {
+        document.getElementById('thinking-bar').classList.add('visible');
+      } else if (data.type === 'thinking_end') {
+        document.getElementById('thinking-bar').classList.remove('visible');
+      } else if (data.type === 'message') {
+        document.getElementById('thinking-bar').classList.remove('visible');
         addBubble('agent', data.text || '');
       } else if (data.type === 'image_path') {
+        document.getElementById('thinking-bar').classList.remove('visible');
         addBubble('agent', 'Image: ' + data.path);
       }
     };
 
     ws.onerror = function() {
-      removeTyping();
       addBubble('system', 'WebSocket error.');
     };
 
     ws.onclose = function() {
-      removeTyping();
       setStatus('disconnected');
       chatId = null;
       chatIdLabel.textContent = '';
@@ -445,7 +512,6 @@
         message: text
       }));
       addImageBubble('user', stagedFile.dataUrl, text);
-      addTyping();
       clearImage();
       msgInput.value = '';
       autoResize(msgInput);
@@ -453,7 +519,6 @@
       var txtId = 'ui-' + Date.now() + '-' + (++msgCounter);
       ws.send(JSON.stringify({ type: 'text', message: text, message_id: txtId }));
       addBubble('user', text);
-      addTyping();
       msgInput.value = '';
       autoResize(msgInput);
     }
@@ -496,8 +561,28 @@
   function addBubble(role, text) {
     var row = makeRow(role);
     var bubble = document.createElement('div');
-    bubble.className = 'bubble';
-    bubble.textContent = text;
+    if (role === 'agent') {
+      bubble.className = 'bubble md-content';
+      bubble.innerHTML = DOMPurify.sanitize(marked.parse(text));
+      var copyBtn = document.createElement('button');
+      copyBtn.className = 'copy-btn';
+      copyBtn.title = 'Copy to clipboard';
+      copyBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+      copyBtn.onclick = function() {
+        navigator.clipboard.writeText(text).then(function() {
+          copyBtn.classList.add('copied');
+          copyBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+          setTimeout(function() {
+            copyBtn.classList.remove('copied');
+            copyBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+          }, 1800);
+        });
+      };
+      bubble.appendChild(copyBtn);
+    } else {
+      bubble.className = 'bubble';
+      bubble.textContent = text;
+    }
     row.appendChild(bubble);
     appendAvatar(row, role);
     chat.appendChild(row);
@@ -525,27 +610,6 @@
     appendAvatar(row, role);
     chat.appendChild(row);
     chat.scrollTop = chat.scrollHeight;
-  }
-
-  function addTyping() {
-    removeTyping();
-    var row = document.createElement('div');
-    row.className = 'bubble-row agent typing';
-    var av = document.createElement('div');
-    av.className = 'avatar';
-    av.textContent = 'AI';
-    row.appendChild(av);
-    var bubble = document.createElement('div');
-    bubble.className = 'bubble';
-    bubble.innerHTML = '<div class="typing-dots"><span></span><span></span><span></span></div>';
-    row.appendChild(bubble);
-    typingRow = row;
-    chat.appendChild(row);
-    chat.scrollTop = chat.scrollHeight;
-  }
-
-  function removeTyping() {
-    if (typingRow) { typingRow.remove(); typingRow = null; }
   }
 
   function setStatus(s) {
@@ -585,7 +649,8 @@
     if (e.key === 'Escape') closeLightbox();
   });
 
-  document.getElementById('server-url').value = `ws://${window.location.hostname}:8017/api/bot`;
+  const ws_protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  document.getElementById('server-url').value = `${ws_protocol}//${window.location.hostname}:${window.location.port}/api/bot`;
 </script>
 </body>
 </html>

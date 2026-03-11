@@ -74,7 +74,7 @@ def register_default_tools(
         Executes a shell command in the workspace container.
 
         Use this tool to explore the filesystem, run scripts, or execute
-        any shell command. The command runs in /workspace inside the container.
+        any shell command. The command runs inside the container.
         """
         try:
             result = await runtime.execute(command)
@@ -86,7 +86,6 @@ def register_default_tools(
         """
         Write content to a file in the workspace container.
 
-        The filename should be relative to /workspace or an absolute path.
         Parent directories will be created if they don't exist.
         """
         try:
@@ -102,7 +101,6 @@ def register_default_tools(
         """
         Read content from a file in the workspace container.
 
-        The filename should be relative to /workspace or an absolute path.
         Returns max 200 lines. Use start_line to read further.
         """
         try:
@@ -240,7 +238,7 @@ def register_default_tools(
             "properties": {
                 "filename": {
                     "type": "string",
-                    "description": "Path to the file (relative to /workspace or absolute).",
+                    "description": "Path to the file.",
                 },
                 "content": {
                     "type": "string",
@@ -258,7 +256,7 @@ def register_default_tools(
             "properties": {
                 "filename": {
                     "type": "string",
-                    "description": "Path to the file (relative to /workspace or absolute).",
+                    "description": "Path to the file.",
                 },
                 "start_line": {
                     "type": "integer",
@@ -280,7 +278,7 @@ def register_default_tools(
             "properties": {
                 "filename": {
                     "type": "string",
-                    "description": "Path to the file (relative to /workspace or absolute).",
+                    "description": "Path to the file.",
                 },
                 "edits": {
                     "type": "array",

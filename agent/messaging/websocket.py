@@ -32,3 +32,19 @@ class WebSocketSender(MessageSender):
 
     async def react(self, emoji: str) -> None:
         pass  # reactions are not applicable to WebSocket sessions
+
+    async def start_thinking(self) -> None:
+        try:
+            await self._ws.send_json(
+                {"type": "thinking_start", "chat_id": self._chat_id}
+            )
+        except Exception as e:
+            logger.warning(
+                "WebSocket thinking_start failed for %s: %s", self._chat_id, e
+            )
+
+    async def end_thinking(self) -> None:
+        try:
+            await self._ws.send_json({"type": "thinking_end", "chat_id": self._chat_id})
+        except Exception as e:
+            logger.warning("WebSocket thinking_end failed for %s: %s", self._chat_id, e)

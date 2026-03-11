@@ -176,6 +176,7 @@ Timezone: {now.tzinfo}
             }
         )
         logger.info(f"Processing text input: {event.message[:100]}...")
+        await event.sender.start_thinking()
 
         prompt = self.app.prompt.build_with_previous_summary(
             self.conversation.previous_summary
@@ -189,6 +190,7 @@ Timezone: {now.tzinfo}
             prompt, self.conversation.messages, orchestrator
         )
         self.conversation.total_tokens = response.usage.total_tokens
+        await event.sender.end_thinking()
         logger.info("Text input processing completed")
 
     async def _process_image_input(self, event: ImageInputEvent) -> None:
@@ -237,6 +239,7 @@ Timezone: {now.tzinfo}
             }
         )
         logger.info("Processing image input")
+        await event.sender.start_thinking()
 
         prompt = self.app.prompt.build_with_previous_summary(
             self.conversation.previous_summary
@@ -250,6 +253,7 @@ Timezone: {now.tzinfo}
             prompt, self.conversation.messages, orchestrator
         )
         self.conversation.total_tokens = response.usage.total_tokens
+        await event.sender.end_thinking()
         logger.info("Image input processing completed")
 
     async def run(self) -> None:

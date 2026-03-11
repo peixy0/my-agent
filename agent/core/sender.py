@@ -28,6 +28,14 @@ class MessageSender(ABC):
         """React to the bound message_id with *emoji*."""
         ...
 
+    async def start_thinking(self) -> None:  # noqa: B027
+        """Signal that the agent has started processing. Default: no-op."""
+        pass
+
+    async def end_thinking(self) -> None:  # noqa: B027
+        """Signal that the agent has finished processing. Default: no-op."""
+        pass
+
 
 class MessageSource(ABC):
     """Background task that receives inbound messages and queues events."""
@@ -44,6 +52,12 @@ class NullSender(MessageSender):
         pass
 
     async def react(self, emoji: str) -> None:
+        pass
+
+    async def start_thinking(self) -> None:
+        pass
+
+    async def end_thinking(self) -> None:
         pass
 
 
