@@ -83,7 +83,10 @@ The following is a compressed summary of the conversation history so far:
 
 # Silent Replies
 
-If you are woken up because of a heartbeat, and there is nothing that needs to be reported, respond with content ends with: NO_REPORT
+If you are woken up because of a heartbeat, you will follow the protocol of a standard heartbeat session.
+You will need to decide if you have anything new to report to the user since the last heartbeat.
+If you don't have anything new to report, you will reply with your reasoning ending by a single token NO_REPORT to indicate that there is no need to report to the user.
+If you do have something new to report, you will reply with the new information without including "NO_REPORT" in your response.
 
 Rules:
 - Use NO_REPORT only during system events
