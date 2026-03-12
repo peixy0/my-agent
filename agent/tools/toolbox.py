@@ -49,11 +49,9 @@ def register_default_tools(
         Returns a list of search results with titles, URLs, and snippets.
         """
         try:
-            web_search_proxy = (
-                settings.web_search_proxy if settings.web_search_proxy else None
-            )
-            with cast(Any, DDGS(web_search_proxy=web_search_proxy, timeout=60)) as ddgs:  # pyright: ignore[reportCallIssue]
-                results = [r for r in ddgs.text(query, max_results=7)]
+            proxy = settings.web_search_proxy if settings.web_search_proxy else None
+            with cast(Any, DDGS(proxy=proxy, timeout=60)) as ddgs:  # pyright: ignore[reportCallIssue]
+                results = [r for r in ddgs.text(query, max_results=7, backend="google")]
                 return ToolContent.from_dict("success", {"results": results})
         except Exception as e:
             return ToolContent.from_dict("error", {"message": str(e)})

@@ -258,7 +258,7 @@ class Agent:
                 messages=messages_to_be_sent,
                 tools=orchestrator.tool_registry.tool_schemas(),
                 # temperature=0.6,
-                top_p=0.95,
+                # top_p=0.95,
                 # extra_body={"chat_template_kwargs": {"enable_thinking": True}},
             )
 
