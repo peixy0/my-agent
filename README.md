@@ -14,7 +14,7 @@ A system-level autonomous LLM agent that runs continuously on your host machine,
 
 ### Prerequisites
 
-- Python 3.10+
+- Python 3.12+
 - `uv` for dependency management
 - Podman (or Docker)
 
@@ -22,7 +22,7 @@ A system-level autonomous LLM agent that runs continuously on your host machine,
 
 ```bash
 # Clone and install dependencies
-cd sys-agent
+cd my-agent
 uv sync --group dev
 
 # Create .env file
@@ -116,12 +116,14 @@ The workspace persists in `./workspace/` and is mounted into the container:
 
 ```
 workspace/
-├── CONTEXT          # Persistent context
-├── TODO             # Task list
+├── CONTEXT.md       # Persistent context
+├── IDENTITY.md      # Agent identity and persona
+├── MEMORY.md        # Long-term memory
+├── TODO.md          # Task list
+├── USER.md          # User preferences and info
 ├── journal/         # Daily journals
-│   └── 2026-02-04.md
-├── .skills/         # Custom skills
-└── events.jsonl     # Event log
+│   └── 2026-03-12.md
+└── knowledgebase/   # Domain knowledge files
 ```
 
 ## Tools
@@ -129,16 +131,19 @@ workspace/
 | Tool | Description |
 |------|-------------|
 | `run_command` | Execute shell commands |
-| `read_file` | Read file content |
+| `read_file` | Read file content (paginated) |
 | `write_file` | Write to files |
-| `edit_file` | Edit file content |
-| `web_search` | Search the web |
-| `fetch` | Fetch web pages |
+| `edit_file` | Surgically edit files via search-and-replace |
+| `grep` | Search for a regex pattern across files |
+| `glob` | List files matching a glob pattern |
+| `web_search` | Search the web (DuckDuckGo) |
+| `fetch` | Fetch and extract web page content |
+| `read_image` | Read an image file |
 | `use_skill` | Load skill instructions |
 
 ## Skills
 
-Add custom skills to `workspace/.skills/`:
+Add custom skills to `workspace/.skills/` (create the directory if it doesn't exist):
 
 ```
 workspace/.skills/my-skill/

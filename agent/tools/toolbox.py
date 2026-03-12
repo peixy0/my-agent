@@ -8,6 +8,7 @@ which executes them inside the workspace container.
 import asyncio
 import base64
 import logging
+import shlex
 from pathlib import Path
 from typing import Any, cast
 
@@ -129,6 +130,46 @@ def register_default_tools(
             return ToolContent.from_dict(
                 "success", await runtime.edit_file(filename, edits)
             )
+        except Exception as e:
+            return ToolContent.from_dict("error", {"message": str(e)})
+
+    async def grep(
+        pattern: str,
+        path: str = ".",
+        include: str = "",
+        case_sensitive: bool = True,
+    ) -> ToolContent:
+        """
+        Search for a regex pattern across files in the workspace container.
+
+        Returns matching lines with file path and line number.
+        Use include to restrict to specific file types (e.g. "*.py").
+        """
+        try:
+            args = ["grep", "-rn", "--color=never", "-E"]
+            if not case_sensitive:
+                args.append("-i")
+            if include:
+                args.append(f"--include={shlex.quote(include)}")
+            args.append(shlex.quote(pattern))
+            args.append(shlex.quote(path))
+            result = await runtime.execute(" ".join(args))
+            return ToolContent.from_dict("success", result)
+        except Exception as e:
+            return ToolContent.from_dict("error", {"message": str(e)})
+
+    async def glob(pattern: str) -> ToolContent:
+        """
+        List files in the workspace container matching a glob pattern.
+
+        Supports recursive patterns with ** (e.g. "src/**/*.py").
+        Returns a sorted list of matching paths.
+        """
+        try:
+            python_code = "import glob,sys; [print(p) for p in sorted(glob.glob(sys.argv[1], recursive=True))]"
+            command = f"python3 -c {shlex.quote(python_code)} {shlex.quote(pattern)}"
+            result = await runtime.execute(command)
+            return ToolContent.from_dict("success", result)
         except Exception as e:
             return ToolContent.from_dict("error", {"message": str(e)})
 
@@ -309,6 +350,46 @@ def register_default_tools(
                 },
             },
             "required": ["filename", "edits"],
+        },
+    )
+
+    registry.register(
+        grep,
+        {
+            "type": "object",
+            "properties": {
+                "pattern": {
+                    "type": "string",
+                    "description": "The regex pattern to search for.",
+                },
+                "path": {
+                    "type": "string",
+                    "description": 'Directory or file path to search in (default: ".").',
+                },
+                "include": {
+                    "type": "string",
+                    "description": 'Restrict search to files matching this glob pattern (e.g. "*.py").',
+                },
+                "case_sensitive": {
+                    "type": "boolean",
+                    "description": "Whether the search is case-sensitive (default: true).",
+                },
+            },
+            "required": ["pattern"],
+        },
+    )
+
+    registry.register(
+        glob,
+        {
+            "type": "object",
+            "properties": {
+                "pattern": {
+                    "type": "string",
+                    "description": 'Glob pattern to match files (e.g. "**/*.py", "src/*.ts"). Supports ** for recursive matching.',
+                }
+            },
+            "required": ["pattern"],
         },
     )
 
