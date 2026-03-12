@@ -7,8 +7,8 @@ RUN \
     cp "$FILE" "$FILE.bak" && \
     # 3. Replace default URLs with Aliyun mirror
     #    Trixie uses 'deb.debian.org' and 'security.debian.org' inside this file
-    sed -i 's@deb.debian.org@mirrors.aliyun.com@g' "$FILE" && \
-    sed -i 's@security.debian.org@mirrors.aliyun.com@g' "$FILE" && \
+    # sed -i 's@deb.debian.org@mirrors.aliyun.com@g' "$FILE" && \
+    # sed -i 's@security.debian.org@mirrors.aliyun.com@g' "$FILE" && \
     # 4. Install your packages
     apt-get update && apt-get install -y \
     bash \
@@ -16,12 +16,12 @@ RUN \
     curl \
     jq && \
     # 5. Restore the original file (send it back)
-    cp "$FILE" "$FILE.aliyun" && \
+    # cp "$FILE" "$FILE.aliyun" && \
     cp "$FILE.bak" "$FILE"
 
 # Setup node
 RUN curl -fsSL https://fnm.vercel.app/install | bash
-RUN fnm install --lts
+RUN ~/.local/share/fnm/fnm install --lts
 
 # Set workspace as working directory
 WORKDIR /workspace

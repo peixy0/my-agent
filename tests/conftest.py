@@ -14,7 +14,7 @@ def mock_settings():
         openai_api_key="test-key",
         container_name="test-container",
         container_runtime="podman",
-        workspace_dir="/tmp/test-workspace",
+        project_dir="/tmp/test-workspace",
         skills_dir="/tmp/test-workspace/.skills",
         wake_interval_seconds=60,
         webui_host="127.0.0.1",

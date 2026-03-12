@@ -33,7 +33,7 @@ class LLMFactory:
         if provider == "github-copilot":
             auth_store = GitHubCopilotAuthStore(
                 state_path=self.settings.github_copilot_state_path,
-                workspace_dir=self.settings.workspace_dir,
+                project_dir=self.settings.project_dir,
             )
             auth_manager = GitHubCopilotAuthManager(
                 auth_store=auth_store,
@@ -58,7 +58,7 @@ class LLMFactory:
                 openai_intent=self.settings.github_copilot_openai_intent,
             )
             models_path = (
-                Path(self.settings.workspace_dir).expanduser().resolve()
+                Path(self.settings.project_dir).expanduser().resolve()
                 / self.settings.github_copilot_models_path
             ).resolve()
             await provider.fetch_and_save_models(models_path)

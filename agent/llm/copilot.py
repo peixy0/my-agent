@@ -72,8 +72,8 @@ class GitHubCopilotAuthState:
 
 
 class GitHubCopilotAuthStore:
-    def __init__(self, state_path: str, workspace_dir: str):
-        base_dir = Path(workspace_dir).expanduser().resolve()
+    def __init__(self, state_path: str, project_dir: str):
+        base_dir = Path(project_dir).expanduser().resolve()
         self.path = (base_dir / state_path).resolve()
 
     def load(self) -> GitHubCopilotAuthState:

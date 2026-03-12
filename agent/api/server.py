@@ -72,7 +72,7 @@ class UvicornApiService(ApiService):
         await server.serve()
 
 
-def create_api(event_queue: asyncio.Queue) -> FastAPI:
+def create_api(event_queue: asyncio.Queue, project_dir: str) -> FastAPI:
     """
     Factory that creates and returns the FastAPI application.
 
@@ -91,9 +91,7 @@ def create_api(event_queue: asyncio.Queue) -> FastAPI:
     def _load_chat_html() -> str:
         nonlocal _chat_html
         if _chat_html is None:
-            html_path = (
-                Path(__file__).parent.parent.parent / "assets" / "test_chat.html"
-            )
+            html_path = Path(project_dir) / "assets" / "test_chat.html"
             _chat_html = html_path.read_text(encoding="utf-8")
         return _chat_html
 
@@ -172,6 +170,6 @@ def create_api_service(
 ) -> ApiService:
     """Create the appropriate API service based on settings."""
     if settings.webui_enabled:
-        app = create_api(event_queue)
+        app = create_api(event_queue, settings.project_dir)
         return UvicornApiService(app, settings.webui_host, settings.webui_port)
     return NullApiService()

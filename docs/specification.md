@@ -121,7 +121,7 @@ Settings are managed via `pydantic-settings` and loaded from `.env`:
 | `openai_api_key` | - | API key |
 | `container_name` | `sys-agent-workspace` | Workspace container name |
 | `container_runtime` | `podman` | Container runtime |
-| `workspace_dir` | `./workspace` | Host workspace path |
+| `project_dir` | `./workspace` | Host workspace path |
 | `wake_interval_seconds` | `1800` | Wake cycle interval |
 | `webui_host` | `0.0.0.0` | API server bind address |
 | `webui_port` | `8000` | API server port |

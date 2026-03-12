@@ -18,7 +18,7 @@ from agent.llm.openai import OpenAIProvider
 def test_auth_store_round_trip(tmp_path):
     store = GitHubCopilotAuthStore(
         state_path=".state/github-copilot.json",
-        workspace_dir=str(tmp_path),
+        project_dir=str(tmp_path),
     )
     state = GitHubCopilotAuthState(
         github_access_token="gh-token",
@@ -47,7 +47,7 @@ def test_factory_creates_openai_provider(tmp_path):
         openai_api_key="test-key",
         container_name="test-container",
         container_runtime="podman",
-        workspace_dir=str(tmp_path),
+        project_dir=str(tmp_path),
         skills_dir=str(tmp_path / ".skills"),
         wake_interval_seconds=60,
         webui_host="127.0.0.1",
@@ -67,7 +67,7 @@ async def test_factory_creates_openai_provider_async(tmp_path):
         openai_api_key="test-key",
         container_name="test-container",
         container_runtime="podman",
-        workspace_dir=str(tmp_path),
+        project_dir=str(tmp_path),
         skills_dir=str(tmp_path / ".skills"),
         wake_interval_seconds=60,
         webui_host="127.0.0.1",
@@ -90,7 +90,7 @@ async def test_factory_creates_github_copilot_provider(tmp_path):
         github_copilot_model="copilot-model",
         container_name="test-container",
         container_runtime="podman",
-        workspace_dir=str(tmp_path),
+        project_dir=str(tmp_path),
         skills_dir=str(tmp_path / ".skills"),
         wake_interval_seconds=60,
         webui_host="127.0.0.1",

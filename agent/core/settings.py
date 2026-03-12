@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import ClassVar
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -43,7 +44,7 @@ class Settings(BaseSettings):
 
     # Workspace paths
     cwd: str = "./workspace"
-    workspace_dir: str = "./"
+    project_dir: str = Path(__file__).parent.parent.parent.resolve().as_posix()
     skills_dir: str = "./.skills"
 
     # Autonomous mode settings

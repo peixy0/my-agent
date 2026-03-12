@@ -16,7 +16,7 @@ def event_queue():
 
 @pytest.fixture
 def client(event_queue):
-    app = create_api(event_queue)
+    app = create_api(event_queue, "./")
     return TestClient(app)
 
 
