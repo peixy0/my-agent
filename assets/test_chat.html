@@ -553,7 +553,7 @@
     if (role === 'user') {
       var av = document.createElement('div');
       av.className = 'avatar';
-      av.textContent = 'Me';
+      av.textContent = 'ME';
       row.appendChild(av);
     }
   }
@@ -651,6 +651,7 @@
 
   const ws_protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   document.getElementById('server-url').value = `${ws_protocol}//${window.location.hostname}:${window.location.port}/api/bot`;
+  connect();
 </script>
 </body>
 </html>
