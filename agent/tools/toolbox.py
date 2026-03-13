@@ -49,10 +49,10 @@ def register_default_tools(
         Returns a list of search results with titles, URLs, and snippets.
         """
         try:
-            proxy = None
-            if settings.proxy:
-                proxy = settings.proxy
-            with cast(Any, DDGS(proxy=proxy, timeout=60)) as ddgs:  # pyright: ignore[reportCallIssue]
+            web_search_proxy = (
+                settings.web_search_proxy if settings.web_search_proxy else None
+            )
+            with cast(Any, DDGS(web_search_proxy=web_search_proxy, timeout=60)) as ddgs:  # pyright: ignore[reportCallIssue]
                 results = [r for r in ddgs.text(query, max_results=7)]
                 return ToolContent.from_dict("success", {"results": results})
         except Exception as e:
@@ -136,6 +136,7 @@ def register_default_tools(
     async def grep(
         pattern: str,
         path: str = ".",
+        surrounding_lines: int = 2,
         include: str = "",
         case_sensitive: bool = True,
     ) -> ToolContent:
@@ -146,7 +147,7 @@ def register_default_tools(
         Use include to restrict to specific file types (e.g. "*.py").
         """
         try:
-            args = ["grep", "-rn", "--color=never", "-E"]
+            args = ["grep", "-rn", "--color=never", "-E", f"-C{surrounding_lines}"]
             if not case_sensitive:
                 args.append("-i")
             if include:
@@ -237,31 +238,30 @@ def register_default_tools(
             },
         )
 
-    if settings.web_tools_enabled:
-        registry.register(
-            web_search,
-            {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "The search query."}
-                },
-                "required": ["query"],
+    registry.register(
+        web_search,
+        {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "The search query."}
             },
-        )
+            "required": ["query"],
+        },
+    )
 
-        registry.register(
-            fetch,
-            {
-                "type": "object",
-                "properties": {
-                    "url": {
-                        "type": "string",
-                        "description": "The URL of the web page to fetch.",
-                    }
-                },
-                "required": ["url"],
+    registry.register(
+        fetch,
+        {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "The URL of the web page to fetch.",
+                }
             },
-        )
+            "required": ["url"],
+        },
+    )
 
     registry.register(
         run_command,
@@ -365,6 +365,10 @@ def register_default_tools(
                 "path": {
                     "type": "string",
                     "description": 'Directory or file path to search in (default: ".").',
+                },
+                "surrounding_lines": {
+                    "type": "integer",
+                    "description": "Number of surrounding lines to include for context (default: 2).",
                 },
                 "include": {
                     "type": "string",

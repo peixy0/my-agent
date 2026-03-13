@@ -2,7 +2,7 @@ import logging
 from asyncio.exceptions import CancelledError
 from typing import Any
 
-from openai import AsyncOpenAI, BadRequestError, DefaultAioHttpClient
+from openai import AsyncOpenAI, BadRequestError
 from tenacity import (
     before_sleep_log,
     retry,
@@ -65,14 +65,10 @@ class OpenAIProvider:
         self,
         url: str,
         api_key: str,
-        proxy: str = "",
     ):
-        http_client = DefaultAioHttpClient(proxy=proxy) if proxy else None
         self.client: AsyncOpenAI = AsyncOpenAI(
             base_url=url,
             api_key=api_key,
-            http_client=http_client,
-            timeout=600,
         )
 
     @retry(

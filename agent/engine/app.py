@@ -14,7 +14,7 @@ from agent.core.runtime import ContainerRuntime, HostRuntime
 from agent.core.sender import MessageSource
 from agent.core.settings import Settings
 from agent.llm.agent import Agent
-from agent.llm.factory import LLMFactory
+from agent.llm.openai import OpenAIProvider
 from agent.llm.prompt import SystemPromptBuilder
 from agent.messaging.source import create_message_source
 from agent.tools.registry import ToolRegistry
@@ -65,10 +65,12 @@ class AppWithDependencies:
         self._background_tasks: list[asyncio.Task] = []
 
     async def run(self) -> None:
-        """Acquire LLM credentials, then start dependent background tasks."""
-        llm_factory = LLMFactory(self.settings)
-        self.llm_client = await llm_factory.create()
-        self.model_name = llm_factory.get_model_name()
+        """Start all background tasks."""
+        self.llm_client = OpenAIProvider(
+            url=self.settings.openai_base_url,
+            api_key=self.settings.openai_api_key,
+        )
+        self.model_name = self.settings.openai_model
         self.agent = Agent(
             self.llm_client,
             self.model_name,
