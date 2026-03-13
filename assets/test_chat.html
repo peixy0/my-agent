@@ -445,11 +445,7 @@
       } else if (data.type === 'thinking_end') {
         document.getElementById('thinking-bar').classList.remove('visible');
       } else if (data.type === 'message') {
-        document.getElementById('thinking-bar').classList.remove('visible');
         addBubble('agent', data.text || '');
-      } else if (data.type === 'image_path') {
-        document.getElementById('thinking-bar').classList.remove('visible');
-        addBubble('agent', 'Image: ' + data.path);
       }
     };
 
