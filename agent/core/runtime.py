@@ -40,7 +40,7 @@ class Runtime(ABC):
 
     @abstractmethod
     async def read_file(
-        self, filename: str, start_line: int = 1, limit: int = 200
+        self, filename: str, start_line: int = 1, limit: int = 500
     ) -> dict[str, Any]:
         """Read a paginated slice of a file. Raises AgentRuntimeException on error."""
         ...
@@ -163,7 +163,7 @@ class ContainerRuntime(Runtime):
 
     @override
     async def read_file(
-        self, filename: str, start_line: int = 1, limit: int = 200
+        self, filename: str, start_line: int = 1, limit: int = 500
     ) -> dict[str, Any]:
         """Read content from a file in the container with pagination."""
         total_cmd = f"sed -n '$=' '{filename}'"
@@ -296,7 +296,7 @@ class HostRuntime(Runtime):
 
     @override
     async def read_file(
-        self, filename: str, start_line: int = 1, limit: int = 200
+        self, filename: str, start_line: int = 1, limit: int = 500
     ) -> dict[str, Any]:
         """
         Read content from a file

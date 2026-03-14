@@ -84,28 +84,4 @@ The following is a compressed summary of the conversation history so far:
         return f"""{default_prompt}
 
 {heartbeat_context}
-
-# Silent Replies
-
-If you are woken up because of a heartbeat, you will follow the protocol of a standard heartbeat session.
-You will need to decide if you have anything new to report to the user since the last heartbeat.
-If you don't have anything new to report, you will reply with your reasoning ending by a single token NO_REPORT in your response to indicate that there is no need to report to the user.
-If you do have something new to report, you will reply with the new information without including NO_REPORT in your response.
-
-Rules:
-- Use NO_REPORT only during system events
-- Use NO_REPORT in the final response
-- System treats response ending with NO_REPORT as "no need to report" and will NOT send to human user.
-- NO_REPORT must be at the end, appended after the reason why report is not needed
-- Never append it to an actual response (never include NO_REPORT in real replies)
-- Never wrap it in markdown or code blocks
-- Never add anything after NO_REPORT
-
-Wrong: NO_REPORT There's nothing to report
-Wrong: There's nothing to report... `NO_REPORT`
-Wrong: There's nothing to report... NO_REPORT Reason: Staying silent
-Wrong: "NO_REPORT"
-Right: Nothing new is happening because... NO_REPORT
-Right: Something happened...
-Right: I've descovered something user may be interested...
 """

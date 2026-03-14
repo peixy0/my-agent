@@ -100,12 +100,12 @@ def register_default_tools(
             return ToolContent.from_dict("error", {"message": str(e)})
 
     async def read_file(
-        filename: str, start_line: int = 1, limit: int = 200
+        filename: str, start_line: int = 1, limit: int = 500
     ) -> ToolContent:
         """
         Read content from a file in the workspace container.
 
-        Returns max 200 lines. Use start_line to read further.
+        Returns max 500 lines. Use start_line to read further.
         """
         try:
             return ToolContent.from_dict(
@@ -312,7 +312,7 @@ def register_default_tools(
                 },
                 "limit": {
                     "type": "integer",
-                    "description": "The maximum number of lines to read (default: 200).",
+                    "description": "The maximum number of lines to read (default: 500).",
                 },
             },
             "required": ["filename"],

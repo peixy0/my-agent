@@ -80,12 +80,14 @@ class ConversationWorker:
     app: Final[SchedulerContext]
     queue: asyncio.Queue[WorkerEvent]
     conversation: Conversation
+    _heartbeat_event: HeartbeatEvent | None
     _heartbeat_task: asyncio.Task[None] | None
 
     def __init__(self, app: SchedulerContext) -> None:
         self.app = app
         self.queue = asyncio.Queue()
         self.conversation = Conversation()
+        self._heartbeat_event = None
         self._heartbeat_task = None
 
     async def _compress_conversation(self, sender: MessageSender) -> None:
@@ -120,13 +122,13 @@ class ConversationWorker:
         self.conversation = Conversation()
         await event.sender.send("New session started")
 
-    async def _schedule_next_heartbeat(self, event: HeartbeatEvent) -> None:
-        await asyncio.sleep(event.interval_seconds)
-        await self.queue.put(event)
+    async def _maybe_schedule_next_heartbeat(self) -> None:
+        if not self._heartbeat_event:
+            return
+        await asyncio.sleep(self._heartbeat_event.interval_seconds)
+        await self.queue.put(self._heartbeat_event)
 
     async def _process_heartbeat(self, event: HeartbeatEvent) -> None:
-        if self._heartbeat_task:
-            self._heartbeat_task.cancel()
         if event.interval_seconds <= 0:
             return
         logger.info("Processing heartbeat")
@@ -150,7 +152,6 @@ SYSTEM EVENT: Heartbeat""",
         )
         await self.app.agent.run(prompt, self.conversation.messages, orchestrator)
         logger.info("Heartbeat cycle completed")
-        self._heartbeat_task = asyncio.create_task(self._schedule_next_heartbeat(event))
 
     async def _process_text_input(self, event: TextInputEvent) -> None:
         if event.message_id in self.conversation.message_ids:
@@ -262,8 +263,11 @@ Timezone: {now.tzinfo}
         logger.info("Conversation worker started")
         while True:
             event = await self.queue.get()
+            if self._heartbeat_task:
+                self._heartbeat_task.cancel()
             try:
                 if isinstance(event, HeartbeatEvent):
+                    self._heartbeat_event = event
                     await self._process_heartbeat(event)
                 elif isinstance(event, NewSessionEvent):
                     await self._process_new_session(event)
@@ -277,6 +281,9 @@ Timezone: {now.tzinfo}
                 logger.error(f"Error in worker {event.chat_id}: {e}", exc_info=True)
                 await event.sender.send(f"Error during processing: {e}")
             finally:
+                self._heartbeat_task = asyncio.create_task(
+                    self._maybe_schedule_next_heartbeat()
+                )
                 self.queue.task_done()
 
 
