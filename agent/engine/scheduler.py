@@ -133,7 +133,8 @@ class ConversationWorker:
         prompt = self.app.prompt.build_for_heartbeat()
         now = datetime.now().astimezone()
         current_datetime = now.strftime("%Y-%m-%d %H:%M:%S %Z%z")
-        messages = [
+        self.conversation = Conversation()
+        self.conversation.messages = [
             {
                 "role": "user",
                 "content": f"""Current Time: {current_datetime}
@@ -147,7 +148,7 @@ SYSTEM EVENT: Heartbeat""",
             self.app.tool_registry,
             event.sender,
         )
-        await self.app.agent.run(prompt, messages, orchestrator)
+        await self.app.agent.run(prompt, self.conversation.messages, orchestrator)
         logger.info("Heartbeat cycle completed")
         self._heartbeat_task = asyncio.create_task(self._schedule_next_heartbeat(event))
 
