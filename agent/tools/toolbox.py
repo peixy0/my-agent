@@ -196,7 +196,7 @@ def register_default_tools(
                 },
             )
         try:
-            data = await runtime.read_file_internal(filename)
+            data = await runtime.read_raw_bytes(filename)
             if len(data) > settings.max_image_size_bytes:
                 mb = settings.max_image_size_bytes / (1024 * 1024)
                 return ToolContent.from_dict(

@@ -23,6 +23,7 @@ class Settings(BaseSettings):
 
     # Agent settings
     tool_timeout: int = 60
+    max_output_chars: int = 10_000
     web_search_proxy: str = ""
 
     # Workspace paths

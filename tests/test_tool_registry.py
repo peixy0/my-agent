@@ -24,9 +24,10 @@ class TestToolRegistry:
 
         registry.register(my_tool, schema)
 
-        assert registry.get_schema("my_tool") is not None
-        assert registry.get_schema("my_tool")["name"] == "my_tool"  # type: ignore[index]
-        assert registry.get_schema("my_tool")["description"] == "A test tool."  # type: ignore[index]
+        result = registry.get_schema("my_tool")
+        assert result is not None
+        assert result["name"] == "my_tool"
+        assert result["description"] == "A test tool."
         assert registry.get_handler("my_tool") is not None
 
     def test_register_with_custom_name(self):

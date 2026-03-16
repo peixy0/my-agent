@@ -35,8 +35,8 @@ class Runtime(ABC):
         ...
 
     @abstractmethod
-    async def read_file_internal(self, filename: str) -> bytes:
-        """Read the full raw content of a file. Raises AgentRuntimeException on error."""
+    async def read_raw_bytes(self, filename: str) -> bytes:
+        """Read the full raw content of a file as bytes. Raises AgentRuntimeException on error."""
         ...
 
     @abstractmethod
@@ -76,10 +76,12 @@ class ContainerRuntime(Runtime):
         container_name: str,
         runtime: str = "podman",
         workdir: str = "/workspace",
+        max_output_chars: int = 10_000,
     ):
         self.container_name = container_name
         self.runtime = runtime
         self.workdir = workdir
+        self._max_output_chars = max_output_chars
         self._validate_runtime()
 
     def _validate_runtime(self) -> None:
@@ -137,21 +139,21 @@ class ContainerRuntime(Runtime):
             stdout, stderr, return_code = await self._exec_in_container(command)
         except Exception as e:
             raise AgentRuntimeException(f"Command execution failed: {e}") from e
-        if len(stdout) > 10000:
+        if len(stdout) > self._max_output_chars:
             stdout = (
-                stdout[:10000]
+                stdout[: self._max_output_chars]
                 + "\n\n(truncated: output is too long, try saving to a temporary file and read section by section)"
             )
-        if len(stderr) > 10000:
+        if len(stderr) > self._max_output_chars:
             stderr = (
-                stderr[:10000]
+                stderr[: self._max_output_chars]
                 + "\n\n(truncated: output is too long, try saving to a temporary file and read section by section)"
             )
         return {"stdout": stdout, "stderr": stderr, "return_code": return_code}
 
     @override
-    async def read_file_internal(self, filename: str) -> bytes:
-        """Read entire content from a file in the container from host by base64 and convert."""
+    async def read_raw_bytes(self, filename: str) -> bytes:
+        """Read entire content from a file in the container via base64 transfer."""
         try:
             base64_cmd = f"base64 {shlex.quote(filename)}"
             stdout, stderr, return_code = await self._exec_in_container(base64_cmd)
@@ -168,10 +170,10 @@ class ContainerRuntime(Runtime):
     ) -> dict[str, Any]:
         """Read content from a file in the container with pagination.
 
-        Reads the full file via read_file_internal (base64 transfer) and slices
+        Reads the full file via read_raw_bytes (base64 transfer) and slices
         in Python, avoiding a second container exec round-trip.
         """
-        raw = await self.read_file_internal(filename)
+        raw = await self.read_raw_bytes(filename)
         lines = raw.decode("utf-8", errors="replace").splitlines(keepends=True)
         total_lines = len(lines)
         start = max(1, start_line)
@@ -206,7 +208,7 @@ class ContainerRuntime(Runtime):
         """
         Edit a file by replacing specific blocks of text.
         """
-        content_bytes = await self.read_file_internal(filename)
+        content_bytes = await self.read_raw_bytes(filename)
         content = content_bytes.decode("utf-8", errors="replace")
         for edit in edits:
             search_block = edit["search"]
@@ -230,6 +232,9 @@ class HostRuntime(Runtime):
     Execute commands on the host machine.
     """
 
+    def __init__(self, max_output_chars: int = 10_000) -> None:
+        self._max_output_chars = max_output_chars
+
     @override
     async def execute(self, command: str) -> dict[str, Any]:
         """
@@ -244,14 +249,14 @@ class HostRuntime(Runtime):
             out_channel, err_channel = await process.communicate()
             stdout = out_channel.decode("utf-8", errors="replace")
             stderr = err_channel.decode("utf-8", errors="replace")
-            if len(stdout) > 10000:
+            if len(stdout) > self._max_output_chars:
                 stdout = (
-                    stdout[:10000]
+                    stdout[: self._max_output_chars]
                     + "\n\n(truncated: output is too long, try saving to a temporary file and read section by section)"
                 )
-            if len(stderr) > 10000:
+            if len(stderr) > self._max_output_chars:
                 stderr = (
-                    stderr[:10000]
+                    stderr[: self._max_output_chars]
                     + "\n\n(truncated: output is too long, try saving to a temporary file and read section by section)"
                 )
             return_code = process.returncode
@@ -259,15 +264,15 @@ class HostRuntime(Runtime):
         except Exception as e:
             raise AgentRuntimeException(f"Command execution failed: {e}") from e
 
-    def _read_file_internal_sync(self, filename: str) -> bytes:
+    def _read_raw_bytes_sync(self, filename: str) -> bytes:
         with Path(filename).open("rb") as f:
             return f.read()
 
     @override
-    async def read_file_internal(self, filename: str) -> bytes:
-        """Read entire content from a file in the host"""
+    async def read_raw_bytes(self, filename: str) -> bytes:
+        """Read entire content from a file on the host."""
         try:
-            return await asyncio.to_thread(self._read_file_internal_sync, filename)
+            return await asyncio.to_thread(self._read_raw_bytes_sync, filename)
         except Exception as e:
             logger.error(f"Failed to read file {filename}: {e}")
             raise
@@ -323,10 +328,8 @@ class HostRuntime(Runtime):
         """
         Edit a file by replacing specific blocks of text.
         """
-        path = Path(filename)
-        if not path.exists():
-            raise AgentRuntimeException("File not found")
-        content = path.read_text(encoding="utf-8")
+        content_bytes = await self.read_raw_bytes(filename)
+        content = content_bytes.decode("utf-8", errors="replace")
         for edit in edits:
             search_block = edit["search"]
             replace_block = edit["replace"]

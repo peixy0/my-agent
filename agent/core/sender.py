@@ -50,6 +50,9 @@ class NullSender(MessageSender):
     async def send_image(self, image_path: str) -> None:
         pass
 
+    async def send_file(self, file_path: str) -> None:
+        pass
+
     async def react(self, emoji: str) -> None:
         pass
 

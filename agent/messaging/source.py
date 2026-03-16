@@ -1,5 +1,6 @@
 import asyncio
 
+from agent.core.events import AgentEvent
 from agent.core.runtime import Runtime
 from agent.core.sender import MessageSource, NullSource
 from agent.core.settings import Settings
@@ -8,7 +9,7 @@ from agent.messaging.feishu import FeishuConfig, FeishuSource
 
 def create_message_source(
     settings: Settings,
-    event_queue: asyncio.Queue,  # type: ignore[type-arg]
+    event_queue: asyncio.Queue[AgentEvent],
     runtime: Runtime,
 ) -> MessageSource:
     """Return the appropriate ``MessageSource`` for the current config."""

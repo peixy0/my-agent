@@ -14,16 +14,17 @@ import asyncio
 import base64
 import contextlib
 import logging
-from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Final, Protocol, runtime_checkable
+from typing import Any, Final, Protocol
 
 from agent.core.events import (
+    AgentEvent,
     DropSessionEvent,
     HeartbeatEvent,
     ImageInputEvent,
     NewSessionEvent,
     TextInputEvent,
+    WorkerEvent,
 )
 from agent.core.sender import MessageSender
 from agent.core.settings import Settings
@@ -38,7 +39,6 @@ from agent.tools.registry import ToolRegistry
 logger = logging.getLogger(__name__)
 
 
-@runtime_checkable
 class SchedulerContext(Protocol):
     """Read-only view of the application dependencies used by the scheduler."""
 
@@ -47,14 +47,9 @@ class SchedulerContext(Protocol):
     agent: Agent
     tool_registry: ToolRegistry
     prompt: SystemPromptBuilder
-    event_queue: asyncio.Queue  # type: ignore[type-arg]
+    event_queue: asyncio.Queue[AgentEvent]
 
 
-AgentEvent = TextInputEvent | ImageInputEvent | DropSessionEvent
-WorkerEvent = HeartbeatEvent | NewSessionEvent | TextInputEvent | ImageInputEvent
-
-
-@dataclass
 class Conversation:
     messages: list[dict[str, Any]]
     message_ids: set[str]
@@ -81,14 +76,14 @@ class ConversationWorker:
     queue: asyncio.Queue[WorkerEvent]
     conversation: Conversation
     _heartbeat_event: HeartbeatEvent | None
-    _heartbeat_task: asyncio.Task[None] | None
+    heartbeat_task: asyncio.Task[None] | None
 
     def __init__(self, app: SchedulerContext) -> None:
         self.app = app
         self.queue = asyncio.Queue()
         self.conversation = Conversation()
         self._heartbeat_event = None
-        self._heartbeat_task = None
+        self.heartbeat_task = None
 
     async def _compress_conversation(self, sender: MessageSender) -> None:
         """
@@ -264,8 +259,8 @@ Timezone: {now.tzinfo}
         logger.info("Conversation worker started")
         while True:
             event = await self.queue.get()
-            if self._heartbeat_task:
-                self._heartbeat_task.cancel()
+            if self.heartbeat_task:
+                self.heartbeat_task.cancel()
             try:
                 if isinstance(event, HeartbeatEvent):
                     self._heartbeat_event = event
@@ -282,7 +277,7 @@ Timezone: {now.tzinfo}
                 logger.error(f"Error in worker {event.chat_id}: {e}", exc_info=True)
                 await event.sender.send(f"Error during processing: {e}")
             finally:
-                self._heartbeat_task = asyncio.create_task(
+                self.heartbeat_task = asyncio.create_task(
                     self._maybe_schedule_next_heartbeat()
                 )
                 self.queue.task_done()
@@ -351,8 +346,8 @@ class Scheduler:
             elif isinstance(event, DropSessionEvent):
                 if event.chat_id in self._workers:
                     worker, task = self._workers.pop(event.chat_id)
-                    if worker._heartbeat_task:
-                        worker._heartbeat_task.cancel()
+                    if worker.heartbeat_task:
+                        worker.heartbeat_task.cancel()
                     task.cancel()
                     with contextlib.suppress(asyncio.CancelledError):
                         await task

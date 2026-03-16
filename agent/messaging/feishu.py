@@ -9,7 +9,7 @@ from pathlib import Path
 
 import lark_oapi as lark
 
-from agent.core.events import ImageInputEvent, TextInputEvent
+from agent.core.events import AgentEvent, ImageInputEvent, TextInputEvent
 from agent.core.runtime import Runtime
 from agent.core.sender import MessageSender, MessageSource
 
@@ -196,7 +196,7 @@ class FeishuSource(MessageSource):
     def __init__(
         self,
         config: FeishuConfig,
-        event_queue: asyncio.Queue,  # type: ignore[type-arg]
+        event_queue: asyncio.Queue[AgentEvent],
         runtime: Runtime,
     ) -> None:
         self._config = config

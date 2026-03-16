@@ -37,3 +37,7 @@ class ImageInputEvent:
 @dataclass
 class DropSessionEvent:
     chat_id: str
+
+
+AgentEvent = TextInputEvent | ImageInputEvent | DropSessionEvent
+WorkerEvent = HeartbeatEvent | NewSessionEvent | TextInputEvent | ImageInputEvent

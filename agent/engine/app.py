@@ -10,6 +10,7 @@ import logging
 import os
 
 from agent.api.server import ApiService, create_api_service
+from agent.core.events import AgentEvent
 from agent.core.runtime import ContainerRuntime, HostRuntime
 from agent.core.sender import MessageSource
 from agent.core.settings import Settings
@@ -34,16 +35,17 @@ class AppWithDependencies:
 
     def __init__(self, settings: Settings):
         self.settings = settings
-        self.event_queue: asyncio.Queue = asyncio.Queue()
+        self.event_queue: asyncio.Queue[AgentEvent] = asyncio.Queue()
 
         # Tool infrastructure
         self.runtime = (
             ContainerRuntime(
                 container_name=self.settings.container_name,
                 runtime=self.settings.container_runtime,
+                max_output_chars=self.settings.max_output_chars,
             )
             if self.settings.container_runtime
-            else HostRuntime()
+            else HostRuntime(max_output_chars=self.settings.max_output_chars)
         )
         self.skill = SkillLoader(self.settings.skills_dir)
         self.tool_registry = ToolRegistry()
@@ -63,8 +65,6 @@ class AppWithDependencies:
 
         self.prompt = SystemPromptBuilder(self.settings, self.skill)
 
-        # LLM client and agent: constructed eagerly so the full object graph is
-        # valid after __init__ and SchedulerContext is satisfied without run().
         self.llm_client = OpenAIProvider(
             url=self.settings.openai_base_url,
             api_key=self.settings.openai_api_key,

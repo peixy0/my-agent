@@ -25,7 +25,12 @@ import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 
-from agent.core.events import DropSessionEvent, ImageInputEvent, TextInputEvent
+from agent.core.events import (
+    AgentEvent,
+    DropSessionEvent,
+    ImageInputEvent,
+    TextInputEvent,
+)
 from agent.core.settings import Settings
 from agent.messaging.websocket import WebSocketSender
 
@@ -72,7 +77,7 @@ class UvicornApiService(ApiService):
         await server.serve()
 
 
-def create_api(event_queue: asyncio.Queue, project_dir: str) -> FastAPI:
+def create_api(event_queue: asyncio.Queue[AgentEvent], project_dir: str) -> FastAPI:
     """
     Factory that creates and returns the FastAPI application.
 
@@ -166,7 +171,7 @@ def create_api(event_queue: asyncio.Queue, project_dir: str) -> FastAPI:
 
 def create_api_service(
     settings: Settings,
-    event_queue: asyncio.Queue,
+    event_queue: asyncio.Queue[AgentEvent],
 ) -> ApiService:
     """Create the appropriate API service based on settings."""
     if settings.webui_enabled:

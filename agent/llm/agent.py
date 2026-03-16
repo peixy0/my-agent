@@ -108,8 +108,6 @@ class Orchestrator(ABC):
         tool_content: ToolContent
         try:
             args = json.loads(raw_arguments)
-            if self.model.startswith("deepseek-ai/"):
-                args = self._fix_deepseek_args(args)
             schema = self.tool_registry.get_schema(tool_name)
             if schema:
                 jsonschema.validate(instance=args, schema=schema["parameters"])
@@ -138,20 +136,6 @@ class Orchestrator(ABC):
             logger.debug(f"Tool call {tool_name} completed successfully")
 
         return ToolCallResult(tool_id, tool_name, args, tool_content)
-
-    @staticmethod
-    def _fix_deepseek_args(args: dict[str, Any]) -> dict[str, Any]:
-        """DeepSeek sometimes double-encodes argument values as JSON strings."""
-        fixed: dict[str, Any] = {}
-        for key, value in args.items():
-            if isinstance(value, str):
-                try:
-                    fixed[key] = json.loads(value)
-                except json.JSONDecodeError:
-                    fixed[key] = value
-            else:
-                fixed[key] = value
-        return fixed
 
 
 def _strip_thought(content: str | None) -> str:
