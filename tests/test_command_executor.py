@@ -68,7 +68,7 @@ class TestContainerRuntime:
         with patch("shutil.which", return_value="/usr/bin/podman"):
             runtime = ContainerRuntime("test-container")
 
-        # read_file delegates to read_file_internal which returns base64-encoded bytes.
+        # read_file delegates to read_raw_bytes which returns base64-encoded bytes.
         # Simulate a 10-line file; request lines 1-2.
         file_content = "\n".join(f"line {i}" for i in range(1, 11)) + "\n"
         encoded = base64.b64encode(file_content.encode()).decode()

@@ -71,7 +71,7 @@ class FeishuSender(MessageSender):
 
     async def send_image(self, image_path: str) -> None:
         try:
-            content = await self._runtime.read_file_internal(image_path)
+            content = await self._runtime.read_raw_bytes(image_path)
         except Exception as e:
             logger.error("Failed to read image file %s: %s", image_path, e)
             raise
@@ -119,7 +119,7 @@ class FeishuSender(MessageSender):
 
     async def send_file(self, file_path: str) -> None:
         try:
-            content = await self._runtime.read_file_internal(file_path)
+            content = await self._runtime.read_raw_bytes(file_path)
         except Exception as e:
             logger.error("Failed to read file %s: %s", file_path, e)
             raise
