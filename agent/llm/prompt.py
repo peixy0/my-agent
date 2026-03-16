@@ -6,10 +6,17 @@ Separated from Agent to keep each class focused on one responsibility.
 """
 
 import platform
+from dataclasses import dataclass
 from pathlib import Path
 
 from agent.core.settings import Settings
 from agent.tools.skill import SkillLoader
+
+
+@dataclass
+class _CachedFile:
+    content: str
+    mtime: float
 
 
 class SystemPromptBuilder:
@@ -18,17 +25,28 @@ class SystemPromptBuilder:
     def __init__(self, settings: Settings, skill: SkillLoader):
         self._settings = settings
         self._skill = skill
+        self._file_cache: dict[str, _CachedFile] = {}
+
+    def _load_file_cached(self, path: Path) -> str | None:
+        """Return file content, using a cached value when mtime hasn't changed."""
+        try:
+            mtime = path.stat().st_mtime
+            key = str(path)
+            cached = self._file_cache.get(key)
+            if cached is not None and cached.mtime == mtime:
+                return cached.content
+            content = path.read_text(encoding="utf-8")
+            self._file_cache[key] = _CachedFile(content, mtime)
+            return content or None
+        except FileNotFoundError:
+            return None
 
     def _load_workspace_files(self, files: list[str]) -> str:
         bootstrap_context = ""
         for filename in files:
-            try:
-                with Path(f"{filename}").open(encoding="utf-8") as f:
-                    content = f.read()
-                    if content:
-                        bootstrap_context += f"# {filename}\n\n{content}\n\n"
-            except FileNotFoundError:
-                pass
+            content = self._load_file_cached(Path(filename))
+            if content:
+                bootstrap_context += f"# {filename}\n\n{content}\n\n"
         return bootstrap_context
 
     def build(self) -> str:

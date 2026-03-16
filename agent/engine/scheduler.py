@@ -116,6 +116,7 @@ class ConversationWorker:
         )
         self.conversation.messages = retained
         self.conversation.total_tokens = 0
+        self.conversation.message_ids = set()
         await sender.send("Conversation compressed")
 
     async def _process_new_session(self, event: NewSessionEvent) -> None:
@@ -350,6 +351,8 @@ class Scheduler:
             elif isinstance(event, DropSessionEvent):
                 if event.chat_id in self._workers:
                     worker, task = self._workers.pop(event.chat_id)
+                    if worker._heartbeat_task:
+                        worker._heartbeat_task.cancel()
                     task.cancel()
                     with contextlib.suppress(asyncio.CancelledError):
                         await task

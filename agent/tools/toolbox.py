@@ -50,9 +50,15 @@ def register_default_tools(
         """
         try:
             proxy = settings.web_search_proxy if settings.web_search_proxy else None
-            with cast(Any, DDGS(proxy=proxy, timeout=60)) as ddgs:  # pyright: ignore[reportCallIssue]
-                results = [r for r in ddgs.text(query, max_results=7, backend="google")]
-                return ToolContent.from_dict("success", {"results": results})
+
+            def _do_search() -> list[Any]:
+                with cast(Any, DDGS(proxy=proxy, timeout=60)) as ddgs:  # pyright: ignore[reportCallIssue]
+                    return [
+                        r for r in ddgs.text(query, max_results=7, backend="google")
+                    ]
+
+            results = await asyncio.to_thread(_do_search)
+            return ToolContent.from_dict("success", {"results": results})
         except Exception as e:
             return ToolContent.from_dict("error", {"message": str(e)})
 
@@ -63,8 +69,8 @@ def register_default_tools(
         Returns the extracted text content from the URL.
         """
         try:
-            downloaded = trafilatura.fetch_url(url)
-            output = trafilatura.extract(downloaded)
+            downloaded = await asyncio.to_thread(trafilatura.fetch_url, url)
+            output = await asyncio.to_thread(trafilatura.extract, downloaded)
             return ToolContent.from_dict("success", {"output": output})
         except Exception as e:
             return ToolContent.from_dict("error", {"message": str(e)})

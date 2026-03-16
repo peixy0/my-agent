@@ -1,6 +1,7 @@
 """Tests for Runtime implementations."""
 
 import asyncio
+import base64
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -67,17 +68,18 @@ class TestContainerRuntime:
         with patch("shutil.which", return_value="/usr/bin/podman"):
             runtime = ContainerRuntime("test-container")
 
-        mock_process_total = AsyncMock()
-        mock_process_total.communicate.return_value = (b"10\n", b"")
-        mock_process_total.returncode = 0
+        # read_file delegates to read_file_internal which returns base64-encoded bytes.
+        # Simulate a 10-line file; request lines 1-2.
+        file_content = "\n".join(f"line {i}" for i in range(1, 11)) + "\n"
+        encoded = base64.b64encode(file_content.encode()).decode()
 
-        mock_process_sed = AsyncMock()
-        mock_process_sed.communicate.return_value = (b"line 1\nline 2\n", b"")
-        mock_process_sed.returncode = 0
+        mock_process = AsyncMock()
+        mock_process.communicate.return_value = (encoded.encode(), b"")
+        mock_process.returncode = 0
 
         with patch(
             "asyncio.create_subprocess_exec",
-            side_effect=[mock_process_total, mock_process_sed],
+            return_value=mock_process,
         ):
             result = await runtime.read_file("test.txt", start_line=1, limit=2)
 

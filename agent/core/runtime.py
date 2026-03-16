@@ -8,6 +8,7 @@ the agent to execute commands in different environments (container, local).
 import asyncio
 import base64
 import logging
+import shlex
 import shutil
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -152,7 +153,7 @@ class ContainerRuntime(Runtime):
     async def read_file_internal(self, filename: str) -> bytes:
         """Read entire content from a file in the container from host by base64 and convert."""
         try:
-            base64_cmd = f"base64 '{filename}'"
+            base64_cmd = f"base64 {shlex.quote(filename)}"
             stdout, stderr, return_code = await self._exec_in_container(base64_cmd)
             if return_code != 0:
                 raise Exception(stderr.strip())
@@ -165,22 +166,17 @@ class ContainerRuntime(Runtime):
     async def read_file(
         self, filename: str, start_line: int = 1, limit: int = 500
     ) -> dict[str, Any]:
-        """Read content from a file in the container with pagination."""
-        total_cmd = f"sed -n '$=' '{filename}'"
-        stdout, stderr, return_code = await self._exec_in_container(total_cmd)
-        if return_code != 0:
-            raise AgentRuntimeException(stderr.strip() or "File not found")
-        try:
-            total_lines = int(stdout.strip())
-        except ValueError:
-            total_lines = 0
+        """Read content from a file in the container with pagination.
+
+        Reads the full file via read_file_internal (base64 transfer) and slices
+        in Python, avoiding a second container exec round-trip.
+        """
+        raw = await self.read_file_internal(filename)
+        lines = raw.decode("utf-8", errors="replace").splitlines(keepends=True)
+        total_lines = len(lines)
         start = max(1, start_line)
         end = start + limit - 1
-        read_cmd = f"sed -n '{start},{end}p' '{filename}'"
-        stdout, stderr, return_code = await self._exec_in_container(read_cmd)
-        if return_code != 0:
-            raise AgentRuntimeException(stderr.strip())
-        content = stdout
+        content = "".join(lines[start - 1 : end])
         return {
             "content": content,
             "total_lines": total_lines,
@@ -191,10 +187,11 @@ class ContainerRuntime(Runtime):
     @override
     async def write_file(self, filename: str, content: str) -> dict[str, Any]:
         """Write content to a file in the container."""
-        mkdir_cmd = f"mkdir -p \"$(dirname '{filename}')\""
+        parent_dir = str(Path(filename).parent)
+        mkdir_cmd = f"mkdir -p {shlex.quote(parent_dir)}"
         _ = await self._exec_in_container(mkdir_cmd)
         encoded_bytes = base64.b64encode(content.encode("utf-8"))
-        command = f"base64 -d > '{filename}'"
+        command = f"base64 -d > {shlex.quote(filename)}"
         _, stderr, return_code = await self._exec_in_container(
             command, input_data=encoded_bytes
         )

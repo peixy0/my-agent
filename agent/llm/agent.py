@@ -226,16 +226,16 @@ class Agent:
         self.llm_client = llm_client
         self.model = model
         self.tool_registry = tool_registry
-        self.system_messages = []
-        self.system_prompt = ""
 
-    def _set_system_prompt(self, prompt: str) -> None:
-        """Set the system prompt and reset conversation history."""
-        self.system_prompt = prompt
-        self.system_messages = [{"role": "system", "content": self.system_prompt}]
+    def _build_system_messages(self, prompt: str) -> list[dict[str, Any]]:
+        """Build the system messages list for a given prompt (no shared state)."""
+        return [{"role": "system", "content": prompt}]
 
     async def _chat(
-        self, messages: list[dict[str, Any]], orchestrator: Orchestrator
+        self,
+        messages: list[dict[str, Any]],
+        orchestrator: Orchestrator,
+        system_messages: list[dict[str, Any]],
     ) -> Any:
         """
         Sends a chat message to the LLM and handles the response.
@@ -245,12 +245,14 @@ class Agent:
         Args:
             messages: A list of messages in the chat history.
             orchestrator: The orchestrator handling tool dispatch and responses.
+            system_messages: Pre-built system messages; captured locally so
+                             concurrent workers cannot overwrite each other.
 
         Returns:
             The LLM's response.
         """
         while True:
-            messages_to_be_sent = self.system_messages.copy()
+            messages_to_be_sent = list(system_messages)
             messages_to_be_sent.extend(messages)
 
             response = await self.llm_client.do_completion(
@@ -280,8 +282,8 @@ class Agent:
         orchestrator: Orchestrator,
     ) -> Any:
         """Run a single turn of the agent conversation."""
-        self._set_system_prompt(system_prompt)
-        return await self._chat(messages, orchestrator)
+        system_messages = self._build_system_messages(system_prompt)
+        return await self._chat(messages, orchestrator, system_messages)
 
     async def compress(
         self,

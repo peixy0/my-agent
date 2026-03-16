@@ -62,10 +62,9 @@ class AppWithDependencies:
         )
 
         self.prompt = SystemPromptBuilder(self.settings, self.skill)
-        self._background_tasks: list[asyncio.Task] = []
 
-    async def run(self) -> None:
-        """Start all background tasks."""
+        # LLM client and agent: constructed eagerly so the full object graph is
+        # valid after __init__ and SchedulerContext is satisfied without run().
         self.llm_client = OpenAIProvider(
             url=self.settings.openai_base_url,
             api_key=self.settings.openai_api_key,
@@ -77,6 +76,10 @@ class AppWithDependencies:
             self.tool_registry,
         )
 
+        self._background_tasks: list[asyncio.Task] = []
+
+    async def run(self) -> None:
+        """Start all background tasks."""
         os.chdir(self.settings.cwd)
 
         self._background_tasks = [
