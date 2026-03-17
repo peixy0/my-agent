@@ -37,12 +37,6 @@ from agent.messaging.websocket import WebSocketSender
 logger = logging.getLogger(__name__)
 
 
-class HealthResponse:
-    """Response body for the health check endpoint."""
-
-    status: str = "ok"
-
-
 class ApiService(ABC):
     """Abstract base for API service implementations."""
 

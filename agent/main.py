@@ -13,7 +13,7 @@ except ImportError:  # pragma: no cover
     uvloop = None  # type: ignore[assignment]
 
 from agent.core.settings import get_settings
-from agent.engine.app import AppWithDependencies
+from agent.engine.app import App
 from agent.engine.scheduler import Scheduler
 
 logger = logging.getLogger("agent")
@@ -31,7 +31,7 @@ async def main() -> None:
     logger.setLevel(logging.DEBUG)
 
     # Start dependent background tasks (messaging source, API server)
-    app = AppWithDependencies(get_settings())
+    app = App(get_settings())
     await app.run()
 
     # Create and run scheduler

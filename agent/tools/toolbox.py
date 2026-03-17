@@ -151,7 +151,14 @@ def register_default_tools(
         Use include to restrict to specific file types (e.g. "*.py").
         """
         try:
-            args = ["grep", "-rn", "--color=never", "-E", f"-C{surrounding_lines}"]
+            args = [
+                "grep",
+                "-rn",
+                "-a",
+                "--color=never",
+                "-E",
+                f"-C{surrounding_lines}",
+            ]
             if not case_sensitive:
                 args.append("-i")
             if include:
@@ -171,7 +178,7 @@ def register_default_tools(
         Returns a sorted list of matching paths.
         """
         try:
-            python_code = "import glob,sys; [print(p) for p in sorted(glob.glob(sys.argv[1], recursive=True))]"
+            python_code = "import glob, sys; print('\\n'.join(sorted(glob.glob(sys.argv[1], recursive=True))))"
             command = f"python3 -c {shlex.quote(python_code)} {shlex.quote(pattern)}"
             result = await runtime.execute(command)
             return ToolContent.from_dict("success", result)

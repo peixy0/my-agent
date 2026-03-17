@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 def _normalize(response: Any) -> CompletionResponseView:
     choices = []
-    for index, choice in enumerate(response.choices):
+    for choice in response.choices:
         msg = choice.message
         tool_calls = [
             ToolCallView(
@@ -39,7 +39,7 @@ def _normalize(response: Any) -> CompletionResponseView:
         ]
         choices.append(
             ChoiceView(
-                index=index,
+                index=choice.index,
                 finish_reason=choice.finish_reason or "stop",
                 message=MessageView(
                     role=msg.role,

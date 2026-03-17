@@ -25,7 +25,7 @@ from agent.tools.toolbox import register_default_tools
 logger = logging.getLogger(__name__)
 
 
-class AppWithDependencies:
+class App:
     """
     Holds the fully-wired object graph and manages background tasks.
 

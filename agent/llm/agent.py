@@ -347,7 +347,7 @@ class Agent:
                         args_str = ", ".join(
                             f"{k}={repr(v)[:80]}" for k, v in parsed.items()
                         )
-                    except (json.JSONDecodeError, Exception):
+                    except Exception:
                         args_str = raw_args[:200]
 
                     result = tool_results.get(tc_id, "")

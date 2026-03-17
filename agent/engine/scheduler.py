@@ -14,6 +14,7 @@ import asyncio
 import base64
 import contextlib
 import logging
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Final, Protocol
 
@@ -50,17 +51,18 @@ class SchedulerContext(Protocol):
     event_queue: asyncio.Queue[AgentEvent]
 
 
+@dataclass
 class Conversation:
-    messages: list[dict[str, Any]]
-    message_ids: set[str]
-    total_tokens: int
-    previous_summary: str
+    messages: list[dict[str, Any]] = field(default_factory=list)
+    message_ids: set[str] = field(default_factory=set)
+    total_tokens: int = 0
+    previous_summary: str = ""
 
-    def __init__(self) -> None:
-        self.messages = []
-        self.message_ids = set()
-        self.total_tokens = 0
-        self.previous_summary = ""
+
+def _format_current_datetime() -> tuple[datetime, str]:
+    """Return the current localtime datetime object and a formatted string."""
+    now = datetime.now().astimezone()
+    return now, now.strftime("%Y-%m-%d %H:%M:%S %Z%z")
 
 
 class ConversationWorker:
@@ -114,6 +116,22 @@ class ConversationWorker:
         self.conversation.message_ids = set()
         await sender.send("Conversation compressed")
 
+    async def _check_dedup_and_compress(
+        self, message_id: str, sender: MessageSender
+    ) -> bool:
+        """Return False if duplicate; register and optionally compress, then return True."""
+        if message_id in self.conversation.message_ids:
+            logger.debug(f"Ignoring duplicated message {message_id}")
+            return False
+        self.conversation.message_ids.add(message_id)
+        if (
+            self.app.settings.context_auto_compression_enabled
+            and self.conversation.messages
+            and self.conversation.total_tokens >= self.app.settings.context_max_tokens
+        ):
+            await self._compress_conversation(sender)
+        return True
+
     async def _process_new_session(self, event: NewSessionEvent) -> None:
         self.conversation = Conversation()
         await event.sender.send("New session started")
@@ -129,8 +147,7 @@ class ConversationWorker:
             return
         logger.info("Processing heartbeat")
         prompt = self.app.prompt.build_for_heartbeat()
-        now = datetime.now().astimezone()
-        current_datetime = now.strftime("%Y-%m-%d %H:%M:%S %Z%z")
+        now, current_datetime = _format_current_datetime()
         self.conversation = Conversation()
         self.conversation.messages = [
             {
@@ -150,20 +167,10 @@ SYSTEM EVENT: Heartbeat""",
         logger.info("Heartbeat cycle completed")
 
     async def _process_text_input(self, event: TextInputEvent) -> None:
-        if event.message_id in self.conversation.message_ids:
-            logger.debug(f"Ignoring duplicated message {event.message_id}")
+        if not await self._check_dedup_and_compress(event.message_id, event.sender):
             return
-        self.conversation.message_ids.add(event.message_id)
 
-        if (
-            self.app.settings.context_auto_compression_enabled
-            and self.conversation.messages
-            and self.conversation.total_tokens >= self.app.settings.context_max_tokens
-        ):
-            await self._compress_conversation(event.sender)
-
-        now = datetime.now().astimezone()
-        current_datetime = now.strftime("%Y-%m-%d %H:%M:%S %Z%z")
+        now, current_datetime = _format_current_datetime()
         self.conversation.messages.append(
             {
                 "role": "user",
@@ -199,20 +206,10 @@ Timezone: {now.tzinfo}
             )
             return
 
-        if event.message_id in self.conversation.message_ids:
-            logger.debug(f"Ignoring duplicated image message {event.message_id}")
+        if not await self._check_dedup_and_compress(event.message_id, event.sender):
             return
-        self.conversation.message_ids.add(event.message_id)
 
-        if (
-            self.app.settings.context_auto_compression_enabled
-            and self.conversation.messages
-            and self.conversation.total_tokens >= self.app.settings.context_max_tokens
-        ):
-            await self._compress_conversation(event.sender)
-
-        now = datetime.now().astimezone()
-        current_datetime = now.strftime("%Y-%m-%d %H:%M:%S %Z%z")
+        now, current_datetime = _format_current_datetime()
         image_b64 = base64.b64encode(event.image_data).decode()
         self.conversation.messages.append(
             {

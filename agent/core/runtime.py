@@ -7,6 +7,7 @@ the agent to execute commands in different environments (container, local).
 
 import asyncio
 import base64
+import difflib
 import logging
 import shlex
 import shutil
@@ -15,6 +16,36 @@ from pathlib import Path
 from typing import Any, Final, override
 
 logger = logging.getLogger(__name__)
+
+_TRUNCATION_SUFFIX = "\n\n(truncated: output is too long, try saving to a temporary file and read section by section)"
+
+
+def _truncate(text: str, limit: int) -> str:
+    return text[:limit] + _TRUNCATION_SUFFIX if len(text) > limit else text
+
+
+def _find_closest_block(content: str, search: str) -> str | None:
+    """Return the closest matching block in *content* for *search*, or None.
+
+    Slides a window of the same line-count as *search* over *content* and
+    returns the window with the highest SequenceMatcher ratio, provided it
+    exceeds 0.6 — low enough to catch whitespace/quote drift, high enough to
+    avoid returning a totally unrelated block.
+    """
+    search_lines = search.splitlines()
+    content_lines = content.splitlines()
+    n = len(search_lines)
+    if n == 0 or n > len(content_lines):
+        return None
+    best_ratio, best_start = 0.0, 0
+    for i in range(len(content_lines) - n + 1):
+        window = "\n".join(content_lines[i : i + n])
+        ratio = difflib.SequenceMatcher(None, search, window, autojunk=False).ratio()
+        if ratio > best_ratio:
+            best_ratio, best_start = ratio, i
+    if best_ratio >= 0.6:
+        return "\n".join(content_lines[best_start : best_start + n])
+    return None
 
 
 class AgentRuntimeException(Exception):
@@ -51,12 +82,34 @@ class Runtime(ABC):
         """Write content to a file. Raises AgentRuntimeException on error."""
         ...
 
-    @abstractmethod
     async def edit_file(
         self, filename: str, edits: list[dict[str, str]]
     ) -> dict[str, Any]:
         """Apply search-and-replace edits to a file. Raises AgentRuntimeException on error."""
-        ...
+        content = (await self.read_raw_bytes(filename)).decode(
+            "utf-8", errors="replace"
+        )
+        for edit in edits:
+            search_block = edit["search"]
+            replace_block = edit["replace"]
+            if search_block not in content:
+                hint = _find_closest_block(content, search_block)
+                suggestion = (
+                    f"\n\nClosest match found in the file:\n\n{hint}\n\nUse that exact text as your search block."
+                    if hint
+                    else ""
+                )
+                raise AgentRuntimeException(
+                    f"Could not find exact match in {filename} for search block\n\n{search_block}\n\n"
+                    f"Ensure your SEARCH block is a literal copy of the file content. The file is left unmodified.{suggestion}"
+                )
+            if content.count(search_block) > 1:
+                raise AgentRuntimeException(
+                    f"Multiple occurrences of search block found in {filename}. "
+                    "Please include more surrounding context to make it unique."
+                )
+            content = content.replace(search_block, replace_block, 1)
+        return await self.write_file(filename, content)
 
 
 class ContainerRuntime(Runtime):
@@ -139,16 +192,8 @@ class ContainerRuntime(Runtime):
             stdout, stderr, return_code = await self._exec_in_container(command)
         except Exception as e:
             raise AgentRuntimeException(f"Command execution failed: {e}") from e
-        if len(stdout) > self._max_output_chars:
-            stdout = (
-                stdout[: self._max_output_chars]
-                + "\n\n(truncated: output is too long, try saving to a temporary file and read section by section)"
-            )
-        if len(stderr) > self._max_output_chars:
-            stderr = (
-                stderr[: self._max_output_chars]
-                + "\n\n(truncated: output is too long, try saving to a temporary file and read section by section)"
-            )
+        stdout = _truncate(stdout, self._max_output_chars)
+        stderr = _truncate(stderr, self._max_output_chars)
         return {"stdout": stdout, "stderr": stderr, "return_code": return_code}
 
     @override
@@ -201,31 +246,6 @@ class ContainerRuntime(Runtime):
             raise AgentRuntimeException(stderr.strip())
         return {"message": f"Content saved to {filename}"}
 
-    @override
-    async def edit_file(
-        self, filename: str, edits: list[dict[str, str]]
-    ) -> dict[str, Any]:
-        """
-        Edit a file by replacing specific blocks of text.
-        """
-        content_bytes = await self.read_raw_bytes(filename)
-        content = content_bytes.decode("utf-8", errors="replace")
-        for edit in edits:
-            search_block = edit["search"]
-            replace_block = edit["replace"]
-            if search_block not in content:
-                raise AgentRuntimeException(
-                    f"Could not find exact match in {filename} for search block\n\n{search_block}\n\n"
-                    "Ensure your SEARCH block is a literal copy of the file content. The file is left unmodified."
-                )
-            if content.count(search_block) > 1:
-                raise AgentRuntimeException(
-                    f"Multiple occurrences of search block found in {filename}. "
-                    "Please include more surrounding context to make it unique."
-                )
-            content = content.replace(search_block, replace_block, 1)
-        return await self.write_file(filename, content)
-
 
 class HostRuntime(Runtime):
     """
@@ -246,19 +266,11 @@ class HostRuntime(Runtime):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            out_channel, err_channel = await process.communicate()
-            stdout = out_channel.decode("utf-8", errors="replace")
-            stderr = err_channel.decode("utf-8", errors="replace")
-            if len(stdout) > self._max_output_chars:
-                stdout = (
-                    stdout[: self._max_output_chars]
-                    + "\n\n(truncated: output is too long, try saving to a temporary file and read section by section)"
-                )
-            if len(stderr) > self._max_output_chars:
-                stderr = (
-                    stderr[: self._max_output_chars]
-                    + "\n\n(truncated: output is too long, try saving to a temporary file and read section by section)"
-                )
+            stdout_bytes, stderr_bytes = await process.communicate()
+            stdout = stdout_bytes.decode("utf-8", errors="replace")
+            stderr = stderr_bytes.decode("utf-8", errors="replace")
+            stdout = _truncate(stdout, self._max_output_chars)
+            stderr = _truncate(stderr, self._max_output_chars)
             return_code = process.returncode
             return {"stdout": stdout, "stderr": stderr, "return_code": return_code}
         except Exception as e:
@@ -320,28 +332,3 @@ class HostRuntime(Runtime):
         Write content to a file
         """
         return await asyncio.to_thread(self._write_file_sync, filename, content)
-
-    @override
-    async def edit_file(
-        self, filename: str, edits: list[dict[str, str]]
-    ) -> dict[str, Any]:
-        """
-        Edit a file by replacing specific blocks of text.
-        """
-        content_bytes = await self.read_raw_bytes(filename)
-        content = content_bytes.decode("utf-8", errors="replace")
-        for edit in edits:
-            search_block = edit["search"]
-            replace_block = edit["replace"]
-            if search_block not in content:
-                raise AgentRuntimeException(
-                    f"Could not find exact match in {filename} for search block\n\n{search_block}\n\n"
-                    "Ensure your SEARCH block is a literal copy of the file content. The file is left unmodified"
-                )
-            if content.count(search_block) > 1:
-                raise AgentRuntimeException(
-                    f"Multiple occurrences of search block found in {filename}. "
-                    "Please include more surrounding context to make it unique."
-                )
-            content = content.replace(search_block, replace_block, 1)
-        return await self.write_file(filename, content)
