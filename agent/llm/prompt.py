@@ -103,3 +103,11 @@ The following is a compressed summary of the conversation history so far:
 
 {heartbeat_context}
 """
+
+    def build_for_cron(self) -> str:
+        default_prompt = self.build()
+        cron_context = self._load_workspace_files(["CRON.md"])
+        return f"""{default_prompt}
+
+{cron_context}
+"""

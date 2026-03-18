@@ -8,6 +8,9 @@ ConversationWorker.
 Each ConversationWorker owns a private asyncio.Queue and processes its
 events sequentially, so conversations are isolated from one another while
 still running concurrently.
+
+Cron jobs are managed by CronWorker — one instance per chat session — which
+wraps aiocron and enqueues CronEvents onto the session's ConversationWorker.
 """
 
 import asyncio
@@ -18,8 +21,11 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Final, Protocol
 
+import aiocron
+
 from agent.core.events import (
     AgentEvent,
+    CronEvent,
     DropSessionEvent,
     HeartbeatEvent,
     ImageInputEvent,
@@ -35,6 +41,7 @@ from agent.llm.agent import (
     HumanInputOrchestrator,
 )
 from agent.llm.prompt import SystemPromptBuilder
+from agent.tools.cron import CronJobDef, CronLoader
 from agent.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
@@ -166,6 +173,29 @@ SYSTEM EVENT: Heartbeat""",
         await self.app.agent.run(prompt, self.conversation.messages, orchestrator)
         logger.info("Heartbeat cycle completed")
 
+    async def _process_cron(self, event: CronEvent) -> None:
+        logger.info(f"Processing cron task: {event.task_name}")
+        prompt = self.app.prompt.build_for_cron()
+        now, current_datetime = _format_current_datetime()
+        messages = [
+            {
+                "role": "user",
+                "content": f"""Current Time: {current_datetime}
+Timezone: {now.tzinfo}
+
+SYSTEM EVENT: Scheduled task '{event.task_name}'
+
+{event.prompt}""",
+            }
+        ]
+        orchestrator = HeartbeatOrchestrator(
+            self.app.model_name,
+            self.app.tool_registry,
+            event.sender,
+        )
+        await self.app.agent.run(prompt, messages, orchestrator)
+        logger.info(f"Cron task '{event.task_name}' completed")
+
     async def _process_text_input(self, event: TextInputEvent) -> None:
         if not await self._check_dedup_and_compress(event.message_id, event.sender):
             return
@@ -262,6 +292,8 @@ Timezone: {now.tzinfo}
                 if isinstance(event, HeartbeatEvent):
                     self._heartbeat_event = event
                     await self._process_heartbeat(event)
+                elif isinstance(event, CronEvent):
+                    await self._process_cron(event)
                 elif isinstance(event, NewSessionEvent):
                     await self._process_new_session(event)
                 elif isinstance(event, TextInputEvent):
@@ -280,16 +312,102 @@ Timezone: {now.tzinfo}
                 self.queue.task_done()
 
 
+class CronWorker:
+    """Manages time-based cron jobs for a single chat session.
+
+    Encapsulates aiocron lifecycle (start / stop). One instance lives per
+    active chat session and is discarded when the session is dropped.
+    """
+
+    def __init__(
+        self,
+        chat_id: str,
+        worker: ConversationWorker,
+        loader: CronLoader,
+    ) -> None:
+        self._chat_id = chat_id
+        self._worker = worker
+        self._loader = loader
+        self._jobs: dict[str, list[Any]] = {}
+
+    def load(self, group_name: str, sender: MessageSender) -> list[CronJobDef]:
+        """Load (or reload) a job group. Returns the definitions that were scheduled."""
+        job_defs = self._loader.load_group(group_name)
+        if not job_defs:
+            return []
+
+        self._stop_group(group_name)
+
+        cron_objects: list[Any] = []
+        for job_def in job_defs:
+
+            def make_callback(
+                _chat_id: str = self._chat_id,
+                _task_name: str = job_def.task_name,
+                _prompt: str = job_def.prompt,
+                _sender: MessageSender = sender,
+                _worker: ConversationWorker = self._worker,
+            ) -> Any:
+                async def callback() -> None:
+                    await _worker.queue.put(
+                        CronEvent(
+                            chat_id=_chat_id,
+                            task_name=_task_name,
+                            prompt=_prompt,
+                            sender=_sender,
+                        )
+                    )
+
+                return callback
+
+            cron_objects.append(
+                aiocron.crontab(job_def.cron_expr, func=make_callback())
+            )
+            logger.info(
+                f"Scheduled cron task '{job_def.task_name}' [{job_def.cron_expr}]"
+                f" for chat_id={self._chat_id}"
+            )
+
+        self._jobs[group_name] = cron_objects
+        return job_defs
+
+    def unload(self, group_name: str) -> bool:
+        """Stop and remove a job group. Returns True if the group was loaded."""
+        return self._stop_group(group_name)
+
+    def unload_all(self) -> None:
+        """Stop and remove all loaded job groups."""
+        for group_name in list(self._jobs):
+            self._stop_group(group_name)
+
+    def loaded_groups(self) -> list[str]:
+        """Return the names of currently active job groups."""
+        return list(self._jobs)
+
+    def _stop_group(self, group_name: str) -> bool:
+        cron_objs = self._jobs.pop(group_name, None)
+        if cron_objs is None:
+            return False
+        for obj in cron_objs:
+            obj.stop()
+        logger.info(f"Unloaded cron group '{group_name}' for chat_id={self._chat_id}")
+        return True
+
+
 class Scheduler:
     """
     Event-driven scheduler that dispatches inbound events to per-chat workers.
 
-    Commands (/heartbeat, /new) are translated to typed internal events here
-    so ConversationWorkers never need to parse raw message text.
+    Slash commands are parsed here and translated to typed internal events so
+    ConversationWorkers never need to handle raw message text.
 
-    A repeating heartbeat loop is started only when /heartbeat is received,
-    bound to the sender that triggered it.  A new /heartbeat replaces any
-    existing loop.
+    Supported commands:
+      /heartbeat [seconds]   — start recurring autonomous wake cycle
+      /cron load <group>     — load and start cron jobs from .cron/<group>/
+      /cron unload <group>   — stop a loaded cron group
+      /cron ls               — list available and loaded cron groups
+      /new                   — reset conversation history
+      /drop                  — tear down the session worker
     """
 
     app: Final[SchedulerContext]
@@ -300,6 +418,8 @@ class Scheduler:
         self.app = app
         self.running = True
         self._workers = {}
+        self._cron_workers: dict[str, CronWorker] = {}
+        self._cron_loader = CronLoader(app.settings.crons_dir)
 
     def _get_or_create_worker(self, chat_id: str) -> ConversationWorker:
         """Return the existing worker for *chat_id* or create and start a new one."""
@@ -310,52 +430,129 @@ class Scheduler:
         worker, _ = self._workers[chat_id]
         return worker
 
-    async def _dispatch(self, event: AgentEvent) -> None:
-        """Translate commands and route every event to the appropriate worker."""
+    def _get_or_create_cron_worker(self, chat_id: str) -> CronWorker:
+        """Return the CronWorker for *chat_id*, creating one if needed."""
+        if chat_id not in self._cron_workers:
+            worker = self._get_or_create_worker(chat_id)
+            self._cron_workers[chat_id] = CronWorker(chat_id, worker, self._cron_loader)
+        return self._cron_workers[chat_id]
+
+    async def _cmd_heartbeat(self, event: TextInputEvent) -> None:
+        param = event.message[len("/heartbeat") :].strip()
         try:
-            if isinstance(event, TextInputEvent) and event.message.startswith(
-                "/heartbeat"
-            ):
-                param = event.message[len("/heartbeat") :].strip()
-                try:
-                    interval_seconds = int(param)
-                except ValueError:
-                    interval_seconds = self.app.settings.wake_interval_seconds
-                await self._get_or_create_worker(event.chat_id).queue.put(
-                    HeartbeatEvent(
-                        chat_id=event.chat_id,
-                        interval_seconds=interval_seconds,
-                        sender=event.sender,
-                    )
+            interval_seconds = int(param)
+        except ValueError:
+            interval_seconds = self.app.settings.wake_interval_seconds
+        await self._get_or_create_worker(event.chat_id).queue.put(
+            HeartbeatEvent(
+                chat_id=event.chat_id,
+                interval_seconds=interval_seconds,
+                sender=event.sender,
+            )
+        )
+        await event.sender.send(f"Heartbeat started: interval {interval_seconds}")
+
+    async def _cmd_cron(self, event: TextInputEvent) -> None:
+        msg = event.message
+        if msg.startswith("/cron load"):
+            group_name = msg[len("/cron load") :].strip()
+            if not group_name:
+                await event.sender.send("Usage: /cron load <job-name>")
+                return
+            job_defs = self._get_or_create_cron_worker(event.chat_id).load(
+                group_name, event.sender
+            )
+            if not job_defs:
+                await event.sender.send(f"No cron tasks found for group '{group_name}'")
+            else:
+                task_lines = "\n".join(
+                    f"  • {j.task_name} ({j.cron_expr})" for j in job_defs
                 )
                 await event.sender.send(
-                    f"Heartbeat started: interval {interval_seconds}"
+                    f"Cron group '{group_name}' loaded"
+                    f" with {len(job_defs)} task(s):\n{task_lines}"
                 )
-            elif isinstance(event, TextInputEvent) and event.message.startswith("/new"):
-                await self._get_or_create_worker(event.chat_id).queue.put(
-                    NewSessionEvent(chat_id=event.chat_id, sender=event.sender)
-                )
-            elif isinstance(event, TextInputEvent) and event.message.startswith(
-                "/drop"
-            ):
-                await event.sender.send(f"Dropping session chat_id={event.chat_id}")
-                await self.app.event_queue.put(DropSessionEvent(chat_id=event.chat_id))
-            elif isinstance(event, DropSessionEvent):
-                if event.chat_id in self._workers:
-                    worker, task = self._workers.pop(event.chat_id)
-                    if worker.heartbeat_task:
-                        worker.heartbeat_task.cancel()
-                    task.cancel()
-                    with contextlib.suppress(asyncio.CancelledError):
-                        await task
-                    logger.info(f"Dropped session worker for chat_id={event.chat_id}")
-                else:
-                    logger.debug(
-                        f"DropSessionEvent for unknown chat_id={event.chat_id}"
-                    )
+        elif msg.startswith("/cron unload"):
+            group_name = msg[len("/cron unload") :].strip()
+            if not group_name:
+                await event.sender.send("Usage: /cron unload <job-name>")
+                return
+            cron = self._get_or_create_cron_worker(event.chat_id)
+            if cron.unload(group_name):
+                await event.sender.send(f"Cron group '{group_name}' unloaded")
             else:
-                worker = self._get_or_create_worker(event.chat_id)
-                await worker.queue.put(event)
+                await event.sender.send(f"Cron group '{group_name}' was not loaded")
+        elif msg.startswith("/cron ls"):
+            available = self._cron_loader.list_groups()
+            if not available:
+                await event.sender.send("No cron groups found in .cron/")
+                return
+            loaded = (
+                set(self._cron_workers[event.chat_id].loaded_groups())
+                if event.chat_id in self._cron_workers
+                else set()
+            )
+            lines: list[str] = []
+            for group in available:
+                tasks = self._cron_loader.load_group(group)
+                status = " [loaded]" if group in loaded else ""
+                task_lines = "\n".join(
+                    f"      - {t.task_name} ({t.cron_expr})" for t in tasks
+                )
+                lines.append(f"  • {group}{status}\n{task_lines}")
+            await event.sender.send("Available cron groups:\n" + "\n".join(lines))
+        else:
+            await event.sender.send(
+                "Usage: /cron load <name> | /cron unload <name> | /cron ls"
+            )
+
+    async def _cmd_new(self, event: TextInputEvent) -> None:
+        await self._get_or_create_worker(event.chat_id).queue.put(
+            NewSessionEvent(chat_id=event.chat_id, sender=event.sender)
+        )
+
+    async def _cmd_drop(self, event: TextInputEvent) -> None:
+        await event.sender.send(f"Dropping session chat_id={event.chat_id}")
+        await self.app.event_queue.put(DropSessionEvent(chat_id=event.chat_id))
+
+    async def _handle_drop_session(self, event: DropSessionEvent) -> None:
+        if event.chat_id in self._workers:
+            worker, task = self._workers.pop(event.chat_id)
+            if worker.heartbeat_task:
+                worker.heartbeat_task.cancel()
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+            logger.info(f"Dropped session worker for chat_id={event.chat_id}")
+        else:
+            logger.debug(f"DropSessionEvent for unknown chat_id={event.chat_id}")
+        cron = self._cron_workers.pop(event.chat_id, None)
+        if cron:
+            cron.unload_all()
+
+    async def _dispatch_text(self, event: TextInputEvent) -> None:
+        """Route a TextInputEvent: intercept slash commands, forward the rest."""
+        msg = event.message
+        if msg.startswith("/heartbeat"):
+            await self._cmd_heartbeat(event)
+        elif msg.startswith("/cron"):
+            await self._cmd_cron(event)
+        elif msg.startswith("/new"):
+            await self._cmd_new(event)
+        elif msg.startswith("/drop"):
+            await self._cmd_drop(event)
+        else:
+            await self._get_or_create_worker(event.chat_id).queue.put(event)
+
+    async def _dispatch(self, event: AgentEvent) -> None:
+        """Route an inbound event to the appropriate handler or worker queue."""
+        try:
+            if isinstance(event, TextInputEvent):
+                await self._dispatch_text(event)
+            elif isinstance(event, DropSessionEvent):
+                await self._handle_drop_session(event)
+            else:
+                await self._get_or_create_worker(event.chat_id).queue.put(event)
         except Exception as e:
             logger.error(f"Error during event dispatch: {e}", exc_info=True)
 

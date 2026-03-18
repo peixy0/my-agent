@@ -25,6 +25,7 @@ engine/AppWithDependencies (engine/app.py)
 Scheduler (engine/scheduler.py)
   ├── ConversationWorker  — per-chat, sequential processing
   ├── HeartbeatEvent      → autonomous wake cycles
+  ├── CronEvent           → scheduled cron task execution
   ├── TextInputEvent      → human chat messages
   ├── ImageInputEvent     → image messages
   ├── NewSessionEvent     → reset conversation
@@ -198,6 +199,7 @@ Event types in `agent/core/events.py`:
 | `TextInputEvent` | Inbound chat message |
 | `ImageInputEvent` | Inbound image message |
 | `HeartbeatEvent` | `/heartbeat [seconds]` command or recurring timer |
+| `CronEvent` | Scheduled cron task fired from a loaded job group |
 | `NewSessionEvent` | `/new` command — resets conversation history |
 | `DropSessionEvent` | WebSocket disconnect — cancels the worker |
 
@@ -326,6 +328,7 @@ agent/
 │   └── websocket.py             # WebSocketSender
 └── tools/
     ├── skill.py                 # Skill discovery
+    ├── cron.py                  # Cron job definition loading (.cron/<group>/*.md)
     ├── registry.py              # Tool registration (OCP)
     └── toolbox.py               # Tool implementations
 ```

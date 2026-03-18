@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     cwd: str = "./workspace"
     project_dir: str = Path(__file__).parent.parent.parent.resolve().as_posix()
     skills_dir: str = "./.skills"
+    crons_dir: str = "./.cron"
 
     # Autonomous mode settings
     wake_interval_seconds: int = 1800  # 30 minutes

@@ -11,6 +11,14 @@ class HeartbeatEvent:
 
 
 @dataclass
+class CronEvent:
+    chat_id: str
+    task_name: str
+    prompt: str
+    sender: MessageSender
+
+
+@dataclass
 class NewSessionEvent:
     chat_id: str
     sender: MessageSender
@@ -40,4 +48,6 @@ class DropSessionEvent:
 
 
 AgentEvent = TextInputEvent | ImageInputEvent | DropSessionEvent
-WorkerEvent = HeartbeatEvent | NewSessionEvent | TextInputEvent | ImageInputEvent
+WorkerEvent = (
+    HeartbeatEvent | CronEvent | NewSessionEvent | TextInputEvent | ImageInputEvent
+)
