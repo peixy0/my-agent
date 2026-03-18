@@ -152,7 +152,7 @@ class HeartbeatOrchestrator(Orchestrator):
         sender: MessageSender,
     ) -> None:
         super().__init__(model, tool_registry)
-        self._sender = sender
+        self.sender = sender
 
     @override
     async def _before_tool_use(self, message: MessageView) -> None:
@@ -162,7 +162,7 @@ class HeartbeatOrchestrator(Orchestrator):
     async def _on_final_response(self, content: str) -> None:
         content = _strip_thought(content)
         if content and not content.endswith("NO_REPORT"):
-            await self._sender.send(content)
+            await self.sender.send(content)
 
 
 class HumanInputOrchestrator(Orchestrator):
@@ -171,7 +171,7 @@ class HumanInputOrchestrator(Orchestrator):
         model: str,
         tool_registry: ToolRegistry,
         sender: MessageSender,
-    ):
+    ) -> None:
         super().__init__(model, tool_registry)
         self.sender = sender
         register_human_input_tools(self.tool_registry, sender)

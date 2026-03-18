@@ -259,13 +259,16 @@ async def test_api_endpoint():
 - Variables/Functions: `snake_case`
 - Classes: `PascalCase`
 - Constants: `UPPER_SNAKE_CASE`
-- Private members: `_leading_underscore`
+- Private helper methods: `_leading_underscore` (e.g., `_compress_conversation`)
+- Instance variables: **no `_` prefix** — use plain names (`self.sender`, not `self._sender`)
+- Module-level private helpers: `_leading_underscore` (e.g., `_truncate`)
 
 ### Code Organization
 - **Single Responsibility**: Each class/function has one clear purpose
 - **Dependency Injection**: Avoid module-level singletons
 - **Type Hints**: All functions must have complete type annotations
 - **Docstrings**: Public APIs must have docstrings
+- **No class-scope member declarations**: Do not pre-declare instance variables as class-level annotations. Assign instance variables directly in `__init__` (e.g., `self.name = name`, not a separate `name: str` in the class body).
 
 ## Development Workflow
 
@@ -328,7 +331,7 @@ agent/
 │   └── websocket.py             # WebSocketSender
 └── tools/
     ├── skill.py                 # Skill discovery
-    ├── cron.py                  # Cron job definition loading (.cron/<group>/*.md)
+    ├── cron.py                  # Cron job definition loading (.cron/<job>/*.md)
     ├── registry.py              # Tool registration (OCP)
     └── toolbox.py               # Tool implementations
 ```

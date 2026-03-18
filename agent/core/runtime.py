@@ -13,7 +13,7 @@ import shlex
 import shutil
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Final, override
+from typing import Any, override
 
 logger = logging.getLogger(__name__)
 
@@ -120,10 +120,6 @@ class ContainerRuntime(Runtime):
     allowing the agent to work in an isolated workspace environment.
     """
 
-    container_name: Final[str]
-    runtime: Final[str]
-    workdir: Final[str]
-
     def __init__(
         self,
         container_name: str,
@@ -131,10 +127,10 @@ class ContainerRuntime(Runtime):
         workdir: str = "/workspace",
         max_output_chars: int = 10_000,
     ):
-        self.container_name = container_name
-        self.runtime = runtime
-        self.workdir = workdir
-        self._max_output_chars = max_output_chars
+        self.container_name: str = container_name
+        self.runtime: str = runtime
+        self.workdir: str = workdir
+        self.max_output_chars = max_output_chars
         self._validate_runtime()
 
     def _validate_runtime(self) -> None:
@@ -192,8 +188,8 @@ class ContainerRuntime(Runtime):
             stdout, stderr, return_code = await self._exec_in_container(command)
         except Exception as e:
             raise AgentRuntimeException(f"Command execution failed: {e}") from e
-        stdout = _truncate(stdout, self._max_output_chars)
-        stderr = _truncate(stderr, self._max_output_chars)
+        stdout = _truncate(stdout, self.max_output_chars)
+        stderr = _truncate(stderr, self.max_output_chars)
         return {"stdout": stdout, "stderr": stderr, "return_code": return_code}
 
     @override
@@ -253,7 +249,7 @@ class HostRuntime(Runtime):
     """
 
     def __init__(self, max_output_chars: int = 10_000) -> None:
-        self._max_output_chars = max_output_chars
+        self.max_output_chars = max_output_chars
 
     @override
     async def execute(self, command: str) -> dict[str, Any]:
@@ -269,8 +265,8 @@ class HostRuntime(Runtime):
             stdout_bytes, stderr_bytes = await process.communicate()
             stdout = stdout_bytes.decode("utf-8", errors="replace")
             stderr = stderr_bytes.decode("utf-8", errors="replace")
-            stdout = _truncate(stdout, self._max_output_chars)
-            stderr = _truncate(stderr, self._max_output_chars)
+            stdout = _truncate(stdout, self.max_output_chars)
+            stderr = _truncate(stderr, self.max_output_chars)
             return_code = process.returncode
             return {"stdout": stdout, "stderr": stderr, "return_code": return_code}
         except Exception as e:

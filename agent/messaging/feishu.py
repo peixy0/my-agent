@@ -1,4 +1,4 @@
-# pyright: reportOptionalMemberAccess=false, reportAttributeAccessIssue=false
+# pyright: reportOptionalMemberAccess=false
 
 import asyncio
 import io
@@ -6,6 +6,7 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
+from typing import override
 
 import lark_oapi as lark
 
@@ -34,11 +35,12 @@ class FeishuSender(MessageSender):
         chat_id: str,
         message_id: str = "",
     ) -> None:
-        self._client = client
-        self._runtime = runtime
-        self._chat_id = chat_id
-        self._message_id = message_id
+        self.client = client
+        self.runtime = runtime
+        self.chat_id = chat_id
+        self.message_id = message_id
 
+    @override
     async def send(self, text: str) -> None:
         card = {
             "schema": "2.0",
@@ -56,24 +58,25 @@ class FeishuSender(MessageSender):
             .receive_id_type("chat_id")
             .request_body(
                 lark.im.v1.CreateMessageRequestBody.builder()
-                .receive_id(self._chat_id)
+                .receive_id(self.chat_id)
                 .msg_type("interactive")
                 .content(json.dumps(card))
                 .build()
             )
             .build()
         )
-        response = await self._client.im.v1.message.acreate(request)
+        response = await self.client.im.v1.message.acreate(request)
         if not response.success():
             logger.error(
-                "Failed to send Feishu message: %s - %s", response.code, response.msg
+                f"Failed to send Feishu message: {response.code} - {response.msg}"
             )
 
+    @override
     async def send_image(self, image_path: str) -> None:
         try:
-            content = await self._runtime.read_raw_bytes(image_path)
+            content = await self.runtime.read_raw_bytes(image_path)
         except Exception as e:
-            logger.error("Failed to read image file %s: %s", image_path, e)
+            logger.error(f"Failed to read image file {image_path}: {e}")
             raise
 
         if not content:
@@ -92,7 +95,7 @@ class FeishuSender(MessageSender):
             )
             .build()
         )
-        upload_response = await self._client.im.v1.image.acreate(upload_request)
+        upload_response = await self.client.im.v1.image.acreate(upload_request)
         if not upload_response.success():
             raise Exception(
                 f"Failed to upload image: {upload_response.code} - {upload_response.msg}"
@@ -104,24 +107,25 @@ class FeishuSender(MessageSender):
             .receive_id_type("chat_id")
             .request_body(
                 lark.im.v1.CreateMessageRequestBody.builder()
-                .receive_id(self._chat_id)
+                .receive_id(self.chat_id)
                 .msg_type("image")
                 .content(json.dumps({"image_key": image_key}))
                 .build()
             )
             .build()
         )
-        response = await self._client.im.v1.message.acreate(request)
+        response = await self.client.im.v1.message.acreate(request)
         if not response.success():
             raise Exception(
                 f"Failed to send Feishu image message: {response.code} - {response.msg}"
             )
 
+    @override
     async def send_file(self, file_path: str) -> None:
         try:
-            content = await self._runtime.read_raw_bytes(file_path)
+            content = await self.runtime.read_raw_bytes(file_path)
         except Exception as e:
-            logger.error("Failed to read file %s: %s", file_path, e)
+            logger.error(f"Failed to read file {file_path}: {e}")
             raise
 
         if not content:
@@ -141,7 +145,7 @@ class FeishuSender(MessageSender):
             )
             .build()
         )
-        upload_response = await self._client.im.v1.file.acreate(upload_request)
+        upload_response = await self.client.im.v1.file.acreate(upload_request)
         if not upload_response.success():
             raise Exception(
                 f"Failed to upload file: {upload_response.code} - {upload_response.msg}"
@@ -153,25 +157,26 @@ class FeishuSender(MessageSender):
             .receive_id_type("chat_id")
             .request_body(
                 lark.im.v1.CreateMessageRequestBody.builder()
-                .receive_id(self._chat_id)
+                .receive_id(self.chat_id)
                 .msg_type("file")
                 .content(json.dumps({"file_key": file_key}))
                 .build()
             )
             .build()
         )
-        response = await self._client.im.v1.message.acreate(request)
+        response = await self.client.im.v1.message.acreate(request)
         if not response.success():
             raise Exception(
                 f"Failed to send Feishu file message: {response.code} - {response.msg}"
             )
 
+    @override
     async def react(self, emoji: str) -> None:
-        if not self._message_id:
+        if not self.message_id:
             return
         request = (
             lark.im.v1.CreateMessageReactionRequest.builder()
-            .message_id(self._message_id)
+            .message_id(self.message_id)
             .request_body(
                 lark.im.v1.CreateMessageReactionRequestBody.builder()
                 .reaction_type(lark.im.v1.Emoji.builder().emoji_type(emoji).build())
@@ -179,13 +184,15 @@ class FeishuSender(MessageSender):
             )
             .build()
         )
-        response = await self._client.im.v1.message_reaction.acreate(request)
+        response = await self.client.im.v1.message_reaction.acreate(request)
         if not response.success():
-            logger.error("Failed to add reaction: %s - %s", response.code, response.msg)
+            logger.error(f"Failed to add reaction: {response.code} - {response.msg}")
 
+    @override
     async def start_thinking(self) -> None:
         pass
 
+    @override
     async def end_thinking(self) -> None:
         pass
 
@@ -199,10 +206,10 @@ class FeishuSource(MessageSource):
         event_queue: asyncio.Queue[AgentEvent],
         runtime: Runtime,
     ) -> None:
-        self._config = config
-        self._event_queue = event_queue
-        self._runtime = runtime
-        self._client = (
+        self.config = config
+        self.event_queue = event_queue
+        self.runtime = runtime
+        self.client = (
             lark.Client.builder()
             .app_id(config.app_id)
             .app_secret(config.app_secret)
@@ -211,7 +218,7 @@ class FeishuSource(MessageSource):
         )
 
     def _make_sender(self, chat_id: str, message_id: str = "") -> FeishuSender:
-        return FeishuSender(self._client, self._runtime, chat_id, message_id)
+        return FeishuSender(self.client, self.runtime, chat_id, message_id)
 
     async def _download_and_queue_image(
         self, chat_id: str, message_id: str, image_key: str
@@ -224,16 +231,14 @@ class FeishuSource(MessageSource):
                 .type("image")
                 .build()
             )
-            response = await self._client.im.v1.message_resource.aget(request)
+            response = await self.client.im.v1.message_resource.aget(request)
             if not response.success():
                 logger.error(
-                    "Failed to download Feishu image: %s - %s",
-                    response.code,
-                    response.msg,
+                    f"Failed to download Feishu image: {response.code} - {response.msg}"
                 )
                 return
             image_data = response.file.read()
-            await self._event_queue.put(
+            await self.event_queue.put(
                 ImageInputEvent(
                     chat_id=chat_id,
                     message_id=message_id,
@@ -242,13 +247,13 @@ class FeishuSource(MessageSource):
                 )
             )
         except Exception as e:
-            logger.error("Failed to download and queue image: %s", e)
+            logger.error(f"Failed to download and queue image: {e}")
 
     def _on_message(self, data: lark.im.v1.P2ImMessageReceiveV1) -> None:
         msg_type = data.event.message.message_type or ""
         content_json = data.event.message.content or "{}"
         content_dict = json.loads(content_json)
-        logger.info("Feishu event received (type=%s): %s", msg_type, content_json)
+        logger.info(f"Feishu event received (type={msg_type}): {content_json}")
 
         if not data.event.message.chat_id:
             return
@@ -271,7 +276,7 @@ class FeishuSource(MessageSource):
         if not text:
             return
         asyncio.run_coroutine_threadsafe(
-            self._event_queue.put(
+            self.event_queue.put(
                 TextInputEvent(
                     chat_id=chat_id,
                     message_id=message_id,
@@ -284,11 +289,11 @@ class FeishuSource(MessageSource):
 
     async def run(self) -> None:
         ws_client = lark.ws.Client(
-            self._config.app_id,
-            self._config.app_secret,
+            self.config.app_id,
+            self.config.app_secret,
             event_handler=lark.EventDispatcherHandler.builder(
-                encrypt_key=self._config.encrypt_key,
-                verification_token=self._config.verification_token,
+                encrypt_key=self.config.encrypt_key,
+                verification_token=self.config.verification_token,
             )
             .register_p2_im_message_receive_v1(self._on_message)
             .build(),

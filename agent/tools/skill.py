@@ -1,8 +1,8 @@
 import logging
-import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
+
+from agent.tools.markdown import parse_frontmatter
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +28,6 @@ class Skill:
 class SkillLoader:
     """Discovers and loads skills from a directory."""
 
-    skills_dir: Final[Path]
-
     def __init__(self, skills_dir: str = ".skills"):
         self.skills_dir = Path(skills_dir)
 
@@ -43,17 +41,11 @@ class SkillLoader:
         for skill_file in self.skills_dir.glob("*/SKILL.md"):
             try:
                 content = skill_file.read_text(encoding="utf-8")
-                data = self._parse_frontmatter(content)
+                data, _ = parse_frontmatter(content)
                 name = data.get("name")
-                if isinstance(name, str):
-                    description = data.get("description", "")
-                    if not isinstance(description, str):
-                        description = str(description)
+                if name:
                     summaries.append(
-                        SkillSummary(
-                            name=name,
-                            description=description,
-                        )
+                        SkillSummary(name=name, description=data.get("description", ""))
                     )
             except Exception as e:
                 logger.error(f"Failed to parse skill at {skill_file}: {e}")
@@ -66,39 +58,15 @@ class SkillLoader:
         for skill_file in self.skills_dir.glob("*/SKILL.md"):
             try:
                 content = skill_file.read_text(encoding="utf-8")
-                data = self._parse_frontmatter(content)
+                data, instructions = parse_frontmatter(content)
                 if data.get("name") == name:
-                    description = data.get("description", "")
-                    if not isinstance(description, str):
-                        description = str(description)
-
-                    skill = Skill(
+                    return Skill(
                         name=name,
                         skill_dir=str(skill_file.parent),
-                        description=description,
-                        instructions=content,
+                        description=data.get("description", ""),
+                        instructions=instructions,
                     )
-                    return skill
             except Exception as e:
                 logger.error(f"Failed to load skill {name} from {skill_file}: {e}")
 
         return None
-
-    def _parse_frontmatter(self, content: str) -> dict[str, str | list[str]]:
-        """Simple regex-based YAML frontmatter parser."""
-        match = re.search(r"^---\s*\n(.*?)\n---\s*\n", content, re.DOTALL)
-        if not match:
-            return {}
-
-        yaml_text = match.group(1)
-        data: dict[str, str | list[str]] = {}
-        for line in yaml_text.splitlines():
-            line = line.strip()
-            if not line or ":" not in line:
-                continue
-            key, value = line.split(":", 1)
-            key = key.strip()
-            value = value.strip()
-            value = value.strip('"').strip("'")
-            data[key] = value
-        return data

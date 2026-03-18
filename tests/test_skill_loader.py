@@ -1,5 +1,6 @@
 """Tests for SkillLoader."""
 
+from agent.tools.markdown import parse_frontmatter
 from agent.tools.skill import SkillLoader
 
 
@@ -70,21 +71,21 @@ Full instructions here.
         assert skill.description == "Test description"
         assert "Full instructions here" in skill.instructions
 
-    def test_parse_frontmatter_missing(self, tmp_path):
+    def testparse_frontmatter_missing(self, tmp_path):
         """Test parsing file without frontmatter."""
-        loader = SkillLoader(str(tmp_path))
-        result = loader._parse_frontmatter("No frontmatter here")
-        assert result == {}
+        fm, body = parse_frontmatter("No frontmatter here")
+        assert fm == {}
+        assert body == "No frontmatter here"
 
-    def test_parse_frontmatter_with_quotes(self, tmp_path):
+    def testparse_frontmatter_with_quotes(self, tmp_path):
         """Test parsing frontmatter with quoted values."""
-        loader = SkillLoader(str(tmp_path))
         content = """---
 name: "quoted-name"
 description: 'single quoted'
 ---
 Body
 """
-        result = loader._parse_frontmatter(content)
-        assert result["name"] == "quoted-name"
-        assert result["description"] == "single quoted"
+        fm, body = parse_frontmatter(content)
+        assert fm["name"] == "quoted-name"
+        assert fm["description"] == "single quoted"
+        assert body == "Body"

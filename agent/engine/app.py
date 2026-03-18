@@ -63,7 +63,7 @@ class App:
             self.settings, self.event_queue
         )
 
-        self.prompt = SystemPromptBuilder(self.settings, self.skill)
+        self.prompt = SystemPromptBuilder(self.skill)
 
         self.llm_client = OpenAIProvider(
             url=self.settings.openai_base_url,
@@ -76,13 +76,13 @@ class App:
             self.tool_registry,
         )
 
-        self._background_tasks: list[asyncio.Task] = []
+        self.background_tasks: list[asyncio.Task] = []
 
     async def run(self) -> None:
         """Start all background tasks."""
         os.chdir(self.settings.cwd)
 
-        self._background_tasks = [
+        self.background_tasks = [
             asyncio.create_task(self.message_source.run()),
             asyncio.create_task(self.api_service.run()),
         ]
