@@ -1,18 +1,3 @@
-"""Cron job loader.
-
-Discovers and loads cron job definitions from .cron/<job>/*.md files.
-Each .md file must have a YAML frontmatter block with 'cron' (expression) and
-optionally 'name' (task label, defaults to the filename stem).
-The body of the file is the prompt sent to the agent when the job fires.
-
-Example .cron/daily-check/status.md:
-    ---
-    cron: "0 9 * * *"
-    name: "Morning status check"
-    ---
-    Review the workspace journal and summarise any incomplete tasks.
-"""
-
 from dataclasses import dataclass
 from pathlib import Path
 

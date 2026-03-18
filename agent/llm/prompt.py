@@ -1,10 +1,3 @@
-"""
-System prompt builder (SRP).
-
-Constructs the agent's system prompt from settings, skills, and runtime context.
-Separated from Agent to keep each class focused on one responsibility.
-"""
-
 import platform
 from dataclasses import dataclass
 from pathlib import Path
@@ -79,7 +72,7 @@ Treat your current working directory as the single global workspace for file ope
 {bootstrap_context}
 """
 
-    def build_with_previous_summary(self, previous_summary: str) -> str:
+    def build_with_conversation_summary(self, previous_summary: str) -> str:
         default_prompt = self.build()
         summary_section = ""
         if previous_summary:

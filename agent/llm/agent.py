@@ -144,7 +144,7 @@ def _strip_thought(content: str | None) -> str:
     return re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
 
 
-class HeartbeatOrchestrator(Orchestrator):
+class BackgroundOrchestrator(Orchestrator):
     def __init__(
         self,
         model: str,

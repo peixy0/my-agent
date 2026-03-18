@@ -13,17 +13,19 @@ The agent follows **SOLID principles** with emphasis on:
 ### Core Components
 
 ```
-engine/AppWithDependencies (engine/app.py)
+engine/App (engine/app.py)
   ├── Settings (configuration)
-  ├── ContainerRuntime (command execution)
+  ├── Runtime (ContainerRuntime or HostRuntime)
   ├── ToolRegistry (tool management)
-  ├── OpenAIProvider (OpenAI-compatible API)
+  ├── OpenAIProvider (LLM client)
   ├── Agent (conversation loop)
+  ├── SystemPromptBuilder (prompt construction)
   ├── MessageSource (Feishu/Null)
   └── ApiService (FastAPI/Null)
 
 Scheduler (engine/scheduler.py)
-  ├── ConversationWorker  — per-chat, sequential processing
+  ├── ConversationWorker  — per-chat, sequential processing (engine/worker.py)
+  ├── CronWorker          — aiocron lifecycle per session (engine/worker.py)
   ├── HeartbeatEvent      → autonomous wake cycles
   ├── CronEvent           → scheduled cron task execution
   ├── TextInputEvent      → human chat messages
@@ -34,27 +36,30 @@ Scheduler (engine/scheduler.py)
 
 ## Composition Root Pattern
 
-`AppWithDependencies` is the **single place** where all dependencies are wired together. This eliminates scattered singletons and makes the dependency graph explicit and testable.
+`App` is the **single place** where all dependencies are wired together. This eliminates scattered singletons and makes the dependency graph explicit and testable.
 
 **Location**: `agent/engine/app.py`
 
 ```python
-class AppWithDependencies:
-    def __init__(self, settings: Settings | None = None):
-        # All dependencies created and wired here
-        self.settings = settings or get_settings()
-        self.event_queue = asyncio.Queue()
-        self.runtime = ContainerRuntime(...)
-        self.tool_registry = ToolRegistry(...)
-        self.llm_client = LLMFactory.create(...)
-        self.agent = Agent(self.llm_client)
-        self.messaging = create_messaging(...)
-        self.api_service = create_api_service(...)
+class App:
+    def __init__(self, settings: Settings):
+        self.settings = settings
+        self.event_queue: asyncio.Queue[AgentEvent] = asyncio.Queue()
+        self.runtime = ContainerRuntime(...) if settings.container_runtime else HostRuntime(...)
+        self.skill = SkillLoader(settings.skills_dir)
+        self.tool_registry = ToolRegistry()
+        register_default_tools(self.tool_registry, self.runtime, self.skill, settings)
+        self.message_source = create_message_source(settings, self.event_queue, self.runtime)
+        self.api_service = create_api_service(settings, self.event_queue)
+        self.prompt = SystemPromptBuilder(self.skill)
+        self.llm_client = OpenAIProvider(url=settings.openai_base_url, api_key=settings.openai_api_key)
+        self.model_name = settings.openai_model
+        self.agent = Agent(self.llm_client, self.model_name, self.tool_registry)
 
     async def run(self) -> None:
-        """Start all background tasks."""
-        self._background_tasks = [
-            asyncio.create_task(self.messaging.run()),
+        os.chdir(self.settings.cwd)
+        self.background_tasks = [
+            asyncio.create_task(self.message_source.run()),
             asyncio.create_task(self.api_service.run()),
         ]
 ```
@@ -68,78 +73,73 @@ class AppWithDependencies:
 
 ### 1. Adding New Tools
 
-Tools are registered in `agent/tools/toolbox.py`. The `ToolRegistry` follows the **Open/Closed Principle**—add new tools without modifying existing code.
+Tools are registered in `agent/tools/toolbox.py`. The `ToolRegistry` follows the **Open/Closed Principle** — add new tools without modifying existing code.
 
 **Step 1**: Implement the tool handler inside `register_default_tools()`. The function's docstring becomes the tool description; the function name becomes the tool name.
 ```python
-async def my_tool_handler(param1: str, param2: int) -> dict[str, Any]:
+async def my_tool(param1: str, param2: int) -> ToolContent:
     """
     What this tool does — used directly as the description sent to the LLM.
     """
     result = await do_something(param1, param2)
-    return {"result": result}
+    return ToolContent.from_dict("success", {"result": result})
 ```
 
-**Step 2**: Register in `register_default_tools()` by passing the function and its **parameters** schema (not a full `{"type": "function", ...}` wrapper):
+**Step 2**: Register by passing the function and its **parameters** schema (not a full `{"type": "function", ...}` wrapper):
 ```python
-def register_default_tools(registry: ToolRegistry, runtime, skill, settings):
-    # ... existing tools ...
-    registry.register(
-        my_tool_handler,
-        {
-            "type": "object",
-            "properties": {
-                "param1": {"type": "string", "description": "..."},
-                "param2": {"type": "integer", "description": "..."},
-            },
-            "required": ["param1", "param2"],
+registry.register(
+    my_tool,
+    {
+        "type": "object",
+        "properties": {
+            "param1": {"type": "string", "description": "..."},
+            "param2": {"type": "integer", "description": "..."},
         },
-    )
+        "required": ["param1", "param2"],
+    },
+)
 ```
 
 Use the optional `name=` and `description=` keyword arguments to override the function name or docstring:
 ```python
-registry.register(my_tool_handler, schema, name="my_tool", description="Override description")
+registry.register(my_tool, schema, name="my_tool", description="Override description")
 ```
+
+Tools only available during human interaction (e.g. `add_reaction`, `send_image`) should be registered in `register_human_input_tools()` instead — they are cloned into a per-turn `HumanInputOrchestrator`.
 
 ### 2. Adding New Messaging Backends
 
-The `Messaging` abstraction allows pluggable notification systems.
+The `MessageSource` / `MessageSender` pair abstracts inbound and outbound messaging.
 
-**Location**: `agent/core/messaging.py`
+**Location**: `agent/messaging/source.py` (factory), `agent/core/sender.py` (ABCs)
 
-**Step 1**: Implement the `Messaging` ABC
+**Step 1**: Implement `MessageSource` (background task that enqueues events) and a paired `MessageSender` (reply handle for a single turn):
 ```python
-class MyMessaging(Messaging):
-    def __init__(self, config: MyMessagingConfig):
-        self._config = config
-        self.event_queue = asyncio.Queue()
-
+class MySource(MessageSource):
     async def run(self) -> None:
-        """Background task processing messages."""
-        while True:
-            event = await self.event_queue.get()
-            if isinstance(event, SendMessageRequest):
-                await self._send(event.content)
-            self.event_queue.task_done()
+        async for msg in my_stream():
+            chat_id = msg.chat_id
+            sender = MySender(msg)
+            await self.event_queue.put(
+                TextInputEvent(chat_id=chat_id, message=msg.text,
+                               message_id=msg.id, sender=sender)
+            )
 
-    async def send_message(self, message: str) -> None:
-        """Queue a message for sending."""
-        await self.event_queue.put(SendMessageRequest(content=message))
-
-    async def _send(self, message: str) -> None:
-        # Actual API call to messaging service
-        ...
+class MySender(MessageSender):
+    async def send(self, text: str) -> None: ...
+    async def send_image(self, path: str) -> None: ...
+    async def send_file(self, path: str) -> None: ...
+    async def react(self, emoji: str) -> None: ...
+    async def start_thinking(self) -> None: ...
+    async def end_thinking(self) -> None: ...
 ```
 
-**Step 2**: Update `create_messaging()` factory
+**Step 2**: Update `create_message_source()` factory in `agent/messaging/source.py`:
 ```python
-def create_messaging(settings: Settings, event_queue: asyncio.Queue, runtime: Runtime) -> Messaging:
-    if settings.my_messaging_enabled:
-        config = MyMessagingConfig(...)
-        return MyMessaging(config)
-    # ... existing backends ...
-    return NullMessaging()
+def create_message_source(settings, event_queue, runtime) -> MessageSource:
+    if settings.my_backend_enabled:
+        return MySource(settings, event_queue)
+    return NullSource()
 ```
 
 ### 3. Adding New API Service Implementations
@@ -149,8 +149,8 @@ The `ApiService` abstraction allows different HTTP frameworks or disabling the A
 **Location**: `agent/api/server.py`
 
 **Current implementations**:
-- `NullApiService`: No-op when API is disabled
-- `UvicornApiService`: FastAPI with Uvicorn
+- `NullApiService`: No-op when `webui_enabled=false`
+- `UvicornApiService`: FastAPI with Uvicorn serving WebSocket + health check
 
 **To add a new implementation**:
 ```python
@@ -163,40 +163,37 @@ class MyApiService(ApiService):
 ## Design Patterns
 
 ### 1. Strategy Pattern
-**Runtime**: Swap execution strategies (container vs. local)
+**Runtime**: Swap execution strategies (`ContainerRuntime` vs. `HostRuntime`)
 ```python
-class ContainerRuntime:
-    async def execute(self, command: str) -> CommandResult:
-        # Execute in container via podman/docker exec
+runtime = ContainerRuntime(container_name=...) if settings.container_runtime else HostRuntime()
+result = await runtime.execute("ls /workspace")
 ```
 
-### 2. Factory Pattern
-**LLMFactory**, **create_messaging()**, **create_api_service()**
-- Encapsulate object creation logic
-- Return appropriate implementation based on configuration
+### 2. Template Method / ABC
+**Orchestrator**: `BackgroundOrchestrator` and `HumanInputOrchestrator` share the tool-dispatch loop inherited from `Orchestrator` but differ in how they handle streaming content and final responses.
 
 ### 3. Observer Pattern
-**Event Queue**: Scheduler observes events from API and timer
+**Event Queue**: Scheduler observes events pushed by API and messaging sources
 ```python
-await event_queue.put(HumanInputEvent(content=message))
-# Scheduler picks up and processes
+await event_queue.put(TextInputEvent(chat_id=..., message="hello", ...))
+# Scheduler picks up and routes to the right ConversationWorker
 ```
 
-### 4. Dependency Inversion Principle
+### 4. Dependency Inversion
 Core logic depends on **abstractions**, not concretions:
-- `Messaging` (not `FeishuMessaging`)
+- `MessageSource` / `MessageSender` (not `FeishuSource`)
 - `ApiService` (not `UvicornApiService`)
-- `Runtime` protocol (not specific runtime)
+- `Runtime` ABC (not `ContainerRuntime` directly)
 
 ## Event-Driven Scheduler
 
-**Location**: `agent/engine/scheduler.py`
+**Location**: `agent/engine/scheduler.py`, `agent/engine/worker.py`
 
 Event types in `agent/core/events.py`:
 
 | Event | Trigger |
 |---|---|
-| `TextInputEvent` | Inbound chat message |
+| `TextInputEvent` | Inbound text message |
 | `ImageInputEvent` | Inbound image message |
 | `HeartbeatEvent` | `/heartbeat [seconds]` command or recurring timer |
 | `CronEvent` | Scheduled cron task fired from a loaded job group |
@@ -205,7 +202,9 @@ Event types in `agent/core/events.py`:
 
 `Scheduler` routes each event to a `ConversationWorker` keyed by `chat_id`. Workers process events sequentially; different chats run concurrently.
 
-`SchedulerContext` is a `Protocol` that captures only what the scheduler needs from the app — `AppWithDependencies` satisfies it structurally, avoiding any import of `engine/app.py` from `engine/scheduler.py`.
+`SchedulerContext` is a `Protocol` that captures only what `Scheduler` needs from `App` — `App` satisfies it structurally, avoiding any upward import.
+
+`ConversationWorker` and `CronWorker` live in `engine/worker.py` and take **explicit constructor deps** — neither depends on `SchedulerContext` nor on each other.
 
 ```python
 while self.running:
@@ -214,34 +213,46 @@ while self.running:
     self.app.event_queue.task_done()
 ```
 
+### Slash commands (parsed by `Scheduler._dispatch_text`)
+
+| Command | Effect |
+|---|---|
+| `/heartbeat [seconds]` | Start recurring wake cycle |
+| `/cron load <job>` | Load and schedule `.cron/<job>/` tasks |
+| `/cron unload <job>` | Stop a loaded job group |
+| `/cron ls` | List available / loaded jobs |
+| `/new` | Reset conversation history |
+| `/drop` | Tear down session worker |
+
 ## Testing Strategy
 
 ### Unit Tests
 - Test individual components with mocked dependencies
-- `AppWithDependencies` accepts `Settings` for testing
+- `App` accepts a `Settings` instance for dependency injection
 
 ```python
 def test_registry():
-    registry = ToolRegistry(tool_timeout=10)
+    registry = ToolRegistry()
 
-    async def handler() -> dict:
+    async def handler() -> ToolContent:
         """test tool"""
-        return {}
+        return ToolContent.from_dict("success", {})
 
     registry.register(handler, {"type": "object", "properties": {}, "required": []})
     assert registry.get_handler("handler") is not None
 ```
 
 ### Integration Tests
-- Test API endpoints with TestClient
-- Test command runtime with real container
+- Test API endpoints with WebSocket TestClient
+- Test runtime with real container or `HostRuntime`
 
 ```python
-async def test_api_endpoint():
-    app = create_api(asyncio.Queue())
+async def test_ws_endpoint():
+    queue: asyncio.Queue[AgentEvent] = asyncio.Queue()
+    app = create_fastapi_app(queue)
     client = TestClient(app)
-    response = client.post("/api/bot", json={"message": "test"})
-    assert response.status_code == 200
+    with client.websocket_connect("/api/bot") as ws:
+        ws.send_json({"type": "text", "message": "hi", "message_id": "1"})
 ```
 
 ## Coding Standards
@@ -311,44 +322,47 @@ uv run ruff format . && uv run ruff check . && uv run basedpyright && uv run pyt
 agent/
 ├── main.py                      # Entry point only
 ├── engine/
-│   ├── app.py                   # Composition root (AppWithDependencies)
-│   └── scheduler.py             # Scheduler, ConversationWorker, SchedulerContext
+│   ├── app.py                   # Composition root (App)
+│   ├── scheduler.py             # Scheduler, SchedulerContext
+│   └── worker.py                # ConversationWorker, CronWorker, Conversation
 ├── api/
-│   └── server.py                # ApiService abstraction + FastAPI + WebSocket
+│   └── server.py                # ApiService ABC + FastAPI + WebSocket
 ├── core/
-│   ├── sender.py                # MessageSender/MessageSource abstractions
-│   ├── events.py                # Event types
-│   ├── runtime.py               # Container command execution
+│   ├── sender.py                # MessageSender/MessageSource ABCs + NullSender/NullSource
+│   ├── events.py                # Event types + WorkerEvent union
+│   ├── runtime.py               # Runtime ABC, ContainerRuntime, HostRuntime
 │   └── settings.py              # Configuration (Pydantic)
 ├── llm/
-│   ├── agent.py                 # Conversation loop
+│   ├── agent.py                 # Agent + Orchestrator ABC + BackgroundOrchestrator + HumanInputOrchestrator
 │   ├── factory.py               # LLM client factory
 │   ├── openai.py                # OpenAI implementation
-│   └── prompt.py                # System prompt construction
+│   ├── prompt.py                # SystemPromptBuilder
+│   └── types.py                 # Shared LLM type definitions
 ├── messaging/
 │   ├── feishu.py                # Feishu source + sender
 │   ├── source.py                # MessageSource factory
 │   └── websocket.py             # WebSocketSender
 └── tools/
-    ├── skill.py                 # Skill discovery
-    ├── cron.py                  # Cron job definition loading (.cron/<job>/*.md)
-    ├── registry.py              # Tool registration (OCP)
-    └── toolbox.py               # Tool implementations
+    ├── registry.py              # ToolRegistry (OCP)
+    ├── toolbox.py               # Tool implementations (default + human-input-only)
+    ├── skill.py                 # SkillLoader
+    ├── cron.py                  # CronLoader + CronJobDef
+    └── markdown.py              # YAML frontmatter parser
 ```
 
 ### Dependency graph (one-way, no cycles)
 
 ```
-core/     sender, events, settings, runtime   (no agent imports)
+core/      sender, events, settings, runtime   (no agent imports)
   ↑
-tools/    → core/
-llm/      → core/, tools/
+tools/     → core/
+llm/       → core/, tools/
 messaging/ → core/
-api/      → core/, messaging/websocket
+api/       → core/, messaging/websocket
   ↑
-engine/   → core/, llm/, tools/, messaging/, api/
+engine/    → core/, llm/, tools/, messaging/, api/
   ↑
-main.py   → engine/, core/settings
+main.py    → engine/, core/settings
 ```
 
 ## References
@@ -356,4 +370,3 @@ main.py   → engine/, core/settings
 - [Specification](docs/specification.md): Detailed system specification
 - [README](README.md): User guide and setup instructions
 - [pyproject.toml](pyproject.toml): Dependencies and tool configuration
-

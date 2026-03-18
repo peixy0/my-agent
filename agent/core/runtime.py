@@ -1,10 +1,3 @@
-"""
-Command runtime module providing abstraction for executing commands.
-
-Implements the Strategy pattern for command execution, enabling
-the agent to execute commands in different environments (container, local).
-"""
-
 import asyncio
 import base64
 import difflib
