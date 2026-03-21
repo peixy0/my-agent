@@ -138,6 +138,24 @@ class Scheduler:
                 await event.sender.send(f"Cron job '{job_name}' unloaded")
             else:
                 await event.sender.send(f"Cron job '{job_name}' was not loaded")
+        elif msg.startswith("/cron reload"):
+            job_name = msg[len("/cron reload") :].strip()
+            if not job_name:
+                await event.sender.send("Usage: /cron reload job-name")
+                return
+            cron = self._get_or_create_cron_worker(event.chat_id)
+            cron.unload(job_name)
+            job_defs = cron.load(job_name, event.sender)
+            if not job_defs:
+                await event.sender.send(f"No cron tasks found for job '{job_name}'")
+            else:
+                task_lines = "\n\n".join(
+                    f"- {j.task_name} ({j.cron_expr})" for j in job_defs
+                )
+                await event.sender.send(
+                    f"Cron job '{job_name}' reloaded"
+                    f" with {len(job_defs)} task(s):\n\n{task_lines}"
+                )
         elif msg.startswith("/cron ls"):
             available = self.cron_loader.list_jobs()
             if not available:
