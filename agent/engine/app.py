@@ -11,13 +11,13 @@ import os
 
 from agent.api.server import ApiService, create_api_service
 from agent.core.events import AgentEvent
+from agent.core.messaging import Gateway
 from agent.core.runtime import ContainerRuntime, HostRuntime
-from agent.core.sender import MessageSource
 from agent.core.settings import Settings
 from agent.llm.agent import Agent
 from agent.llm.openai import OpenAIProvider
 from agent.llm.prompt import SystemPromptBuilder
-from agent.messaging.source import create_message_source
+from agent.messaging.gateway import create_gateway
 from agent.tools.registry import ToolRegistry
 from agent.tools.skill import SkillLoader
 from agent.tools.toolbox import register_default_tools
@@ -53,13 +53,13 @@ class App:
             self.tool_registry, self.runtime, self.skill, self.settings
         )
 
-        # Message source (inbound)
-        self.message_source: MessageSource = create_message_source(
+        # Message gateway (inbound)
+        self.gateway: Gateway | None = create_gateway(
             self.settings, self.event_queue, self.runtime
         )
 
         # API Service
-        self.api_service: ApiService = create_api_service(
+        self.api_service: ApiService | None = create_api_service(
             self.settings, self.event_queue
         )
 
@@ -81,8 +81,7 @@ class App:
     async def run(self) -> None:
         """Start all background tasks."""
         os.chdir(self.settings.cwd)
-
-        self.background_tasks = [
-            asyncio.create_task(self.message_source.run()),
-            asyncio.create_task(self.api_service.run()),
-        ]
+        if self.api_service is not None:
+            self.background_tasks.append(asyncio.create_task(self.api_service.run()))
+        if self.gateway is not None:
+            self.background_tasks.append(asyncio.create_task(self.gateway.run()))

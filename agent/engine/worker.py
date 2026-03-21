@@ -26,7 +26,7 @@ from agent.core.events import (
     TextInputEvent,
     WorkerEvent,
 )
-from agent.core.sender import MessageSender
+from agent.core.messaging import Channel
 from agent.core.settings import Settings
 from agent.llm.agent import (
     Agent,
@@ -81,7 +81,7 @@ class ConversationWorker:
         self.heartbeat_event: HeartbeatEvent | None = None
         self.heartbeat_task: asyncio.Task[None] | None = None
 
-    async def _compress_conversation(self, sender: MessageSender) -> None:
+    async def _compress_conversation(self, sender: Channel) -> None:
         """
         Compress old messages into a structured summary, retaining the recent tail.
 
@@ -110,9 +110,7 @@ class ConversationWorker:
         self.conversation.message_ids = set()
         await sender.send("Conversation compressed")
 
-    async def _check_dedup_and_compress(
-        self, message_id: str, sender: MessageSender
-    ) -> bool:
+    async def _check_dedup_and_compress(self, message_id: str, sender: Channel) -> bool:
         """Return False if duplicate; register and optionally compress, then return True."""
         if message_id in self.conversation.message_ids:
             logger.debug(f"Ignoring duplicated message {message_id}")
@@ -318,7 +316,7 @@ class CronWorker:
         self.loader = loader
         self.jobs: dict[str, list[Any]] = {}
 
-    def load(self, job_name: str, sender: MessageSender) -> list[CronJobDef]:
+    def load(self, job_name: str, sender: Channel) -> list[CronJobDef]:
         """Load (or reload) a job group. Returns the definitions that were scheduled."""
         job_defs = self.loader.load_job(job_name)
         if not job_defs:
@@ -333,7 +331,7 @@ class CronWorker:
                 _chat_id: str = self.chat_id,
                 _task_name: str = job_def.task_name,
                 _prompt: str = job_def.prompt,
-                _sender: MessageSender = sender,
+                _sender: Channel = sender,
                 _queue: asyncio.Queue[WorkerEvent] = self.queue,
             ) -> Any:
                 async def callback() -> None:

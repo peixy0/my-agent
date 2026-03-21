@@ -16,7 +16,6 @@ import trafilatura
 from ddgs import DDGS
 
 from agent.core.runtime import Runtime
-from agent.core.sender import MessageSender
 from agent.core.settings import Settings
 from agent.llm.types import ToolContent
 from agent.tools.registry import ToolRegistry
@@ -434,111 +433,5 @@ def register_default_tools(
                 }
             },
             "required": ["skill_name"],
-        },
-    )
-
-
-def register_human_input_tools(
-    registry: ToolRegistry,
-    sender: MessageSender,
-) -> None:
-    """Register tools that are only available during human-input interactions."""
-
-    async def add_reaction(emoji: str) -> ToolContent:
-        """
-        React to the current message with an emoji.
-        """
-        try:
-            await sender.react(emoji)
-            return ToolContent.from_dict(
-                "success", {"message": f"Added reaction {emoji} to message"}
-            )
-        except Exception as e:
-            logger.error(f"Failed to add reaction {emoji}: {e}", exc_info=True)
-            return ToolContent.from_dict("error", {"message": str(e)})
-
-    registry.register(
-        add_reaction,
-        {
-            "type": "object",
-            "properties": {
-                "emoji": {
-                    "type": "string",
-                    "enum": [
-                        "OK",
-                        "THUMBSUP",
-                        "MUSCLE",
-                        "LOL",
-                        "THINKING",
-                        "Shrug",
-                        "Fire",
-                        "Coffee",
-                        "PARTY",
-                        "CAKE",
-                        "HEART",
-                    ],
-                    "description": "The emoji type to react with. OK, THUMBSUP, MUSCLE, LOL, THINKING, Shrug, Fire, Coffee, PARTY, CAKE, HEART",
-                }
-            },
-            "required": ["emoji"],
-        },
-    )
-
-    async def send_image(image_path: str) -> ToolContent:
-        """
-        Send an image file to the user. Image file size must be under 10 MiB.
-        """
-        try:
-            await sender.send_image(image_path)
-            return ToolContent.from_dict(
-                "success",
-                {
-                    "message": f"Sent image {image_path} to user",
-                },
-            )
-        except Exception as e:
-            return ToolContent.from_dict("error", {"message": str(e)})
-
-    registry.register(
-        send_image,
-        {
-            "type": "object",
-            "properties": {
-                "image_path": {
-                    "type": "string",
-                    "description": "Absolute path to the image file to send.",
-                }
-            },
-            "required": ["image_path"],
-        },
-    )
-
-    async def send_file(file_path: str) -> ToolContent:
-        """
-        Send a file to the user. File size must be under 20 MiB.
-        Send only when explicitly asked.
-        """
-        try:
-            await sender.send_file(file_path)
-            return ToolContent.from_dict(
-                "success",
-                {
-                    "message": f"Sent file {file_path} to user",
-                },
-            )
-        except Exception as e:
-            return ToolContent.from_dict("error", {"message": str(e)})
-
-    registry.register(
-        send_file,
-        {
-            "type": "object",
-            "properties": {
-                "file_path": {
-                    "type": "string",
-                    "description": "Absolute path to the file to send.",
-                }
-            },
-            "required": ["file_path"],
         },
     )

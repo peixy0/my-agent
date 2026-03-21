@@ -20,8 +20,8 @@ engine/App (engine/app.py)
   ├── OpenAIProvider (LLM client)
   ├── Agent (conversation loop)
   ├── SystemPromptBuilder (prompt construction)
-  ├── MessageSource (Feishu/Null)
-  └── ApiService (FastAPI/Null)
+  ├── Gateway (FeishuGateway/None)
+  └── ApiService (FastAPI)
 
 Scheduler (engine/scheduler.py)
   ├── ConversationWorker  — per-chat, sequential processing (engine/worker.py)
@@ -49,7 +49,7 @@ class App:
         self.skill = SkillLoader(settings.skills_dir)
         self.tool_registry = ToolRegistry()
         register_default_tools(self.tool_registry, self.runtime, self.skill, settings)
-        self.message_source = create_message_source(settings, self.event_queue, self.runtime)
+        self.gateway = create_gateway(settings, self.event_queue, self.runtime)
         self.api_service = create_api_service(settings, self.event_queue)
         self.prompt = SystemPromptBuilder(self.skill)
         self.llm_client = OpenAIProvider(url=settings.openai_base_url, api_key=settings.openai_api_key)
@@ -58,10 +58,9 @@ class App:
 
     async def run(self) -> None:
         os.chdir(self.settings.cwd)
-        self.background_tasks = [
-            asyncio.create_task(self.message_source.run()),
-            asyncio.create_task(self.api_service.run()),
-        ]
+        self.background_tasks = [asyncio.create_task(self.api_service.run())]
+        if self.gateway is not None:
+            self.background_tasks.append(asyncio.create_task(self.gateway.run()))
 ```
 
 ### Benefits
@@ -105,42 +104,45 @@ Use the optional `name=` and `description=` keyword arguments to override the fu
 registry.register(my_tool, schema, name="my_tool", description="Override description")
 ```
 
-Tools only available during human interaction (e.g. `add_reaction`, `send_image`) should be registered in `register_human_input_tools()` instead — they are cloned into a per-turn `HumanInputOrchestrator`.
+Tools only available during human interaction (e.g. `add_reaction`, `send_image`) should be registered by overriding `Channel.register_tools()` — they are cloned into a per-turn `HumanInputOrchestrator`.
 
 ### 2. Adding New Messaging Backends
 
-The `MessageSource` / `MessageSender` pair abstracts inbound and outbound messaging.
+The `Gateway` / `Channel` pair abstracts inbound and outbound messaging.
 
-**Location**: `agent/messaging/source.py` (factory), `agent/core/sender.py` (ABCs)
+**Location**: `agent/messaging/gateway.py` (factory), `agent/core/messaging.py` (ABCs)
 
-**Step 1**: Implement `MessageSource` (background task that enqueues events) and a paired `MessageSender` (reply handle for a single turn):
+**Step 1**: Implement `Gateway` (background task that enqueues events) and a paired `Channel` (reply handle for a single turn). Override `register_tools` to expose backend capabilities as agent tools:
 ```python
-class MySource(MessageSource):
-    async def run(self) -> None:
-        async for msg in my_stream():
-            chat_id = msg.chat_id
-            sender = MySender(msg)
-            await self.event_queue.put(
-                TextInputEvent(chat_id=chat_id, message=msg.text,
-                               message_id=msg.id, sender=sender)
-            )
-
-class MySender(MessageSender):
+class MyChannel(Channel):
     async def send(self, text: str) -> None: ...
-    async def send_image(self, path: str) -> None: ...
-    async def send_file(self, path: str) -> None: ...
-    async def react(self, emoji: str) -> None: ...
     async def start_thinking(self) -> None: ...
     async def end_thinking(self) -> None: ...
+
+    def register_tools(self, registry: ToolRegistry) -> None:
+        # Register only what this backend supports
+        async def add_reaction(emoji: str) -> ToolContent: ...
+        registry.register(add_reaction, schema)
+
+class MyGateway(Gateway):
+    async def run(self) -> None:
+        async for msg in my_stream():
+            channel = MyChannel(msg)
+            await self.event_queue.put(
+                TextInputEvent(chat_id=msg.chat_id, message=msg.text,
+                               message_id=msg.id, sender=channel)
+            )
 ```
 
-**Step 2**: Update `create_message_source()` factory in `agent/messaging/source.py`:
+**Step 2**: Update `create_gateway()` factory in `agent/messaging/gateway.py`:
 ```python
-def create_message_source(settings, event_queue, runtime) -> MessageSource:
+def create_gateway(settings, event_queue, runtime) -> Gateway | None:
     if settings.my_backend_enabled:
-        return MySource(settings, event_queue)
-    return NullSource()
+        return MyGateway(settings, event_queue)
+    return None
 ```
+
+Tools registered via `register_tools` are added to the orchestrator's cloned registry at the start of each human-input turn, so they appear in the LLM's tool list *only* when that backend is active.
 
 ### 3. Adding New API Service Implementations
 
@@ -149,7 +151,6 @@ The `ApiService` abstraction allows different HTTP frameworks or disabling the A
 **Location**: `agent/api/server.py`
 
 **Current implementations**:
-- `NullApiService`: No-op when `webui_enabled=false`
 - `UvicornApiService`: FastAPI with Uvicorn serving WebSocket + health check
 
 **To add a new implementation**:
@@ -180,10 +181,9 @@ await event_queue.put(TextInputEvent(chat_id=..., message="hello", ...))
 ```
 
 ### 4. Dependency Inversion
-Core logic depends on **abstractions**, not concretions:
-- `MessageSource` / `MessageSender` (not `FeishuSource`)
-- `ApiService` (not `UvicornApiService`)
-- `Runtime` ABC (not `ContainerRuntime` directly)
+The `Gateway` / `Channel` pair abstracts inbound and outbound messaging.
+- `Gateway`: background task that receives inbound messages and queues events
+- `Channel`: reply handle for a single conversation turn; advertises backend capabilities as tools via `register_tools`
 
 ## Event-Driven Scheduler
 
@@ -328,7 +328,7 @@ agent/
 ├── api/
 │   └── server.py                # ApiService ABC + FastAPI + WebSocket
 ├── core/
-│   ├── sender.py                # MessageSender/MessageSource ABCs + NullSender/NullSource
+│   ├── messaging.py             # Channel/Gateway ABCs
 │   ├── events.py                # Event types + WorkerEvent union
 │   ├── runtime.py               # Runtime ABC, ContainerRuntime, HostRuntime
 │   └── settings.py              # Configuration (Pydantic)
@@ -339,12 +339,12 @@ agent/
 │   ├── prompt.py                # SystemPromptBuilder
 │   └── types.py                 # Shared LLM type definitions
 ├── messaging/
-│   ├── feishu.py                # Feishu source + sender
-│   ├── source.py                # MessageSource factory
-│   └── websocket.py             # WebSocketSender
+│   ├── feishu.py                # FeishuGateway + FeishuChannel
+│   ├── gateway.py               # create_gateway factory
+│   └── websocket.py             # WebSocketChannel
 └── tools/
     ├── registry.py              # ToolRegistry (OCP)
-    ├── toolbox.py               # Tool implementations (default + human-input-only)
+    ├── toolbox.py               # Tool implementations (default)
     ├── skill.py                 # SkillLoader
     ├── cron.py                  # CronLoader + CronJobDef
     └── markdown.py              # YAML frontmatter parser
@@ -353,11 +353,11 @@ agent/
 ### Dependency graph (one-way, no cycles)
 
 ```
-core/      sender, events, settings, runtime   (no agent imports)
+core/      channel, events, settings, runtime   (no agent imports)
   ↑
 tools/     → core/
 llm/       → core/, tools/
-messaging/ → core/
+messaging/ → core/, gateway
 api/       → core/, messaging/websocket
   ↑
 engine/    → core/, llm/, tools/, messaging/, api/

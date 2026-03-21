@@ -1,18 +1,18 @@
 import asyncio
 
 from agent.core.events import AgentEvent
+from agent.core.messaging import Gateway
 from agent.core.runtime import Runtime
-from agent.core.sender import MessageSource, NullSource
 from agent.core.settings import Settings
-from agent.messaging.feishu import FeishuConfig, FeishuSource
+from agent.messaging.feishu import FeishuConfig, FeishuGateway
 
 
-def create_message_source(
+def create_gateway(
     settings: Settings,
     event_queue: asyncio.Queue[AgentEvent],
     runtime: Runtime,
-) -> MessageSource:
-    """Return the appropriate ``MessageSource`` for the current config."""
+) -> Gateway | None:
+    """Return the appropriate ``Gateway`` for the current config, or None."""
     if settings.feishu_app_id and settings.feishu_app_secret:
         config = FeishuConfig(
             app_id=settings.feishu_app_id,
@@ -20,5 +20,5 @@ def create_message_source(
             encrypt_key=settings.feishu_encrypt_key,
             verification_token=settings.feishu_verification_token,
         )
-        return FeishuSource(config, event_queue, runtime)
-    return NullSource()
+        return FeishuGateway(config, event_queue, runtime)
+    return None

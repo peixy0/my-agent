@@ -32,7 +32,7 @@ from agent.core.events import (
     TextInputEvent,
 )
 from agent.core.settings import Settings
-from agent.messaging.websocket import WebSocketSender
+from agent.messaging.websocket import WebSocketChannel
 
 logger = logging.getLogger(__name__)
 
@@ -42,13 +42,6 @@ class ApiService(ABC):
 
     @abstractmethod
     async def run(self) -> None: ...
-
-
-class NullApiService(ApiService):
-    """No-op API service when API is disabled."""
-
-    async def run(self) -> None:
-        pass
 
 
 class UvicornApiService(ApiService):
@@ -113,7 +106,7 @@ def create_api(event_queue: asyncio.Queue[AgentEvent], project_dir: str) -> Fast
                 msg_type: str = data.get("type", "text")
                 message_id: str = data.get("message_id") or uuid.uuid4().hex
                 message: str = data.get("message", "")
-                sender = WebSocketSender(websocket, chat_id, message_id)
+                sender = WebSocketChannel(websocket, chat_id, message_id)
 
                 if msg_type == "image":
                     raw_data: str = data.get("data", "")
@@ -166,9 +159,9 @@ def create_api(event_queue: asyncio.Queue[AgentEvent], project_dir: str) -> Fast
 def create_api_service(
     settings: Settings,
     event_queue: asyncio.Queue[AgentEvent],
-) -> ApiService:
+) -> ApiService | None:
     """Create the appropriate API service based on settings."""
     if settings.webui_enabled:
         app = create_api(event_queue, settings.project_dir)
         return UvicornApiService(app, settings.webui_host, settings.webui_port)
-    return NullApiService()
+    return None

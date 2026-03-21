@@ -1,13 +1,13 @@
 from dataclasses import dataclass, field
 
-from agent.core.sender import MessageSender
+from agent.core.messaging import Channel
 
 
 @dataclass
 class HeartbeatEvent:
     chat_id: str
     interval_seconds: int
-    sender: MessageSender
+    sender: Channel
 
 
 @dataclass
@@ -15,13 +15,13 @@ class CronEvent:
     chat_id: str
     task_name: str
     prompt: str
-    sender: MessageSender
+    sender: Channel
 
 
 @dataclass
 class NewSessionEvent:
     chat_id: str
-    sender: MessageSender
+    sender: Channel
 
 
 @dataclass
@@ -29,7 +29,7 @@ class TextInputEvent:
     chat_id: str
     message_id: str
     message: str
-    sender: MessageSender
+    sender: Channel
 
 
 @dataclass
@@ -37,7 +37,7 @@ class ImageInputEvent:
     chat_id: str
     message_id: str
     image_data: bytes
-    sender: MessageSender
+    sender: Channel
     mime_type: str = field(default="image/jpeg")
     message: str = field(default="")
 

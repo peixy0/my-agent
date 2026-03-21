@@ -16,7 +16,7 @@ from typing import Any, Protocol, override
 
 import jsonschema
 
-from agent.core.sender import MessageSender
+from agent.core.messaging import Channel
 from agent.llm.types import (
     CompletionResponseView,
     MessageView,
@@ -24,7 +24,6 @@ from agent.llm.types import (
     ToolContent,
 )
 from agent.tools.registry import ToolRegistry
-from agent.tools.toolbox import register_human_input_tools
 
 logger = logging.getLogger(__name__)
 
@@ -149,7 +148,7 @@ class BackgroundOrchestrator(Orchestrator):
         self,
         model: str,
         tool_registry: ToolRegistry,
-        sender: MessageSender,
+        sender: Channel,
     ) -> None:
         super().__init__(model, tool_registry)
         self.sender = sender
@@ -170,11 +169,11 @@ class HumanInputOrchestrator(Orchestrator):
         self,
         model: str,
         tool_registry: ToolRegistry,
-        sender: MessageSender,
+        sender: Channel,
     ) -> None:
         super().__init__(model, tool_registry)
         self.sender = sender
-        register_human_input_tools(self.tool_registry, sender)
+        sender.register_tools(self.tool_registry)
 
     @override
     async def _before_tool_use(self, message: MessageView) -> None:

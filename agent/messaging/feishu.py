@@ -11,8 +11,10 @@ from typing import override
 import lark_oapi as lark
 
 from agent.core.events import AgentEvent, ImageInputEvent, TextInputEvent
+from agent.core.messaging import Channel, Gateway
 from agent.core.runtime import Runtime
-from agent.core.sender import MessageSender, MessageSource
+from agent.llm.types import ToolContent
+from agent.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +27,7 @@ class FeishuConfig:
     verification_token: str
 
 
-class FeishuSender(MessageSender):
+class FeishuChannel(Channel):
     """Sends outbound messages and reactions to a single Feishu chat / message."""
 
     def __init__(
@@ -72,7 +74,14 @@ class FeishuSender(MessageSender):
             )
 
     @override
-    async def send_image(self, image_path: str) -> None:
+    async def start_thinking(self) -> None:
+        pass
+
+    @override
+    async def end_thinking(self) -> None:
+        pass
+
+    async def _send_image(self, image_path: str) -> None:
         try:
             content = await self.runtime.read_raw_bytes(image_path)
         except Exception as e:
@@ -120,8 +129,7 @@ class FeishuSender(MessageSender):
                 f"Failed to send Feishu image message: {response.code} - {response.msg}"
             )
 
-    @override
-    async def send_file(self, file_path: str) -> None:
+    async def _send_file(self, file_path: str) -> None:
         try:
             content = await self.runtime.read_raw_bytes(file_path)
         except Exception as e:
@@ -170,8 +178,7 @@ class FeishuSender(MessageSender):
                 f"Failed to send Feishu file message: {response.code} - {response.msg}"
             )
 
-    @override
-    async def react(self, emoji: str) -> None:
+    async def _react(self, emoji: str) -> None:
         if not self.message_id:
             return
         request = (
@@ -189,15 +196,106 @@ class FeishuSender(MessageSender):
             logger.error(f"Failed to add reaction: {response.code} - {response.msg}")
 
     @override
-    async def start_thinking(self) -> None:
-        pass
+    def register_tools(self, registry: ToolRegistry) -> None:
+        """Register Feishu-specific tools: reactions, image sending, and file sending."""
 
-    @override
-    async def end_thinking(self) -> None:
-        pass
+        async def add_reaction(emoji: str) -> ToolContent:
+            """
+            React to the current message with an emoji.
+            """
+            try:
+                await self._react(emoji)
+                return ToolContent.from_dict(
+                    "success", {"message": f"Added reaction {emoji} to message"}
+                )
+            except Exception as e:
+                logger.error(f"Failed to add reaction {emoji}: {e}", exc_info=True)
+                return ToolContent.from_dict("error", {"message": str(e)})
+
+        registry.register(
+            add_reaction,
+            {
+                "type": "object",
+                "properties": {
+                    "emoji": {
+                        "type": "string",
+                        "enum": [
+                            "OK",
+                            "THUMBSUP",
+                            "MUSCLE",
+                            "LOL",
+                            "THINKING",
+                            "Shrug",
+                            "Fire",
+                            "Coffee",
+                            "PARTY",
+                            "CAKE",
+                            "HEART",
+                        ],
+                        "description": "The emoji type to react with. OK, THUMBSUP, MUSCLE, LOL, THINKING, Shrug, Fire, Coffee, PARTY, CAKE, HEART",
+                    }
+                },
+                "required": ["emoji"],
+            },
+        )
+
+        async def send_image(image_path: str) -> ToolContent:
+            """
+            Send an image file to the user. Image file size must be under 10 MiB.
+            """
+            try:
+                await self._send_image(image_path)
+                return ToolContent.from_dict(
+                    "success",
+                    {"message": f"Sent image {image_path} to user"},
+                )
+            except Exception as e:
+                return ToolContent.from_dict("error", {"message": str(e)})
+
+        registry.register(
+            send_image,
+            {
+                "type": "object",
+                "properties": {
+                    "image_path": {
+                        "type": "string",
+                        "description": "Absolute path to the image file to send.",
+                    }
+                },
+                "required": ["image_path"],
+            },
+        )
+
+        async def send_file(file_path: str) -> ToolContent:
+            """
+            Send a file to the user. File size must be under 20 MiB.
+            Send only when explicitly asked.
+            """
+            try:
+                await self._send_file(file_path)
+                return ToolContent.from_dict(
+                    "success",
+                    {"message": f"Sent file {file_path} to user"},
+                )
+            except Exception as e:
+                return ToolContent.from_dict("error", {"message": str(e)})
+
+        registry.register(
+            send_file,
+            {
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "Absolute path to the file to send.",
+                    }
+                },
+                "required": ["file_path"],
+            },
+        )
 
 
-class FeishuSource(MessageSource):
+class FeishuGateway(Gateway):
     """Receives Feishu WebSocket events and enqueues them for the scheduler."""
 
     def __init__(
@@ -217,8 +315,8 @@ class FeishuSource(MessageSource):
             .build()
         )
 
-    def _make_sender(self, chat_id: str, message_id: str = "") -> FeishuSender:
-        return FeishuSender(self.client, self.runtime, chat_id, message_id)
+    def _make_channel(self, chat_id: str, message_id: str = "") -> FeishuChannel:
+        return FeishuChannel(self.client, self.runtime, chat_id, message_id)
 
     async def _download_and_queue_image(
         self, chat_id: str, message_id: str, image_key: str
@@ -243,7 +341,7 @@ class FeishuSource(MessageSource):
                     chat_id=chat_id,
                     message_id=message_id,
                     image_data=image_data,
-                    sender=self._make_sender(chat_id, message_id),
+                    sender=self._make_channel(chat_id, message_id),
                 )
             )
         except Exception as e:
@@ -281,12 +379,13 @@ class FeishuSource(MessageSource):
                     chat_id=chat_id,
                     message_id=message_id,
                     message=text,
-                    sender=self._make_sender(chat_id, message_id),
+                    sender=self._make_channel(chat_id, message_id),
                 )
             ),
             loop,
         )
 
+    @override
     async def run(self) -> None:
         ws_client = lark.ws.Client(
             self.config.app_id,

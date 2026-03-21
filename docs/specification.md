@@ -47,8 +47,8 @@ This document specifies a system-level autonomous LLM agent. The agent runs on t
 
 ### App (`agent/engine/app.py`)
 - **Composition root** — single place where all dependencies are wired
-- Creates: Settings → runtime → ToolRegistry → OpenAIProvider → Agent → MessageSource → ApiService
-- `run()` method: changes to `cwd`, starts background tasks (message_source, api_service)
+- Creates: Settings → runtime → ToolRegistry → OpenAIProvider → Agent → Gateway → ApiService
+- `run()` method: changes to `cwd`, starts background tasks (`gateway`, `api_service`) if they are configured
 - Selects `ContainerRuntime` when `container_runtime` setting is non-empty; falls back to `HostRuntime` otherwise
 
 ### Agent (`agent/llm/agent.py`)
@@ -59,7 +59,7 @@ This document specifies a system-level autonomous LLM agent. The agent runs on t
 
 ### Orchestrator (`agent/llm/agent.py`)
 - ABC with two implementations:
-  - `HumanInputOrchestrator` — sends partial content before tool calls; registers human-input-only tools (`add_reaction`, `send_image`, `send_file`) at construction time
+  - `HumanInputOrchestrator` — sends partial content before tool calls; calls `channel.register_tools(registry)` at construction time to expose backend-specific capabilities as agent tools
   - `BackgroundOrchestrator` — silently executes tools; only sends final response if content is non-empty and does not end with `NO_REPORT`
 - `process(message, finish_reason)` — dispatches tool calls or handles final response
 - `_handle_tool_call()` — resolves handler from registry, validates args against JSON schema, executes
@@ -100,18 +100,18 @@ This document specifies a system-level autonomous LLM agent. The agent runs on t
 - `CronWorker` — manages aiocron lifecycle for one chat session; constructed with `chat_id`, an `asyncio.Queue`, and `CronLoader` — no dependency on `ConversationWorker`
 
 ### ApiService (`agent/api/server.py`)
-- `ApiService` ABC with `NullApiService` and `UvicornApiService` implementations
+- `ApiService` ABC with `UvicornApiService` implementation
 - `UvicornApiService` wraps FastAPI with uvicorn server
 - `WS /api/bot` — WebSocket endpoint; each connection gets its own `chat_id` session
 - `GET /api/health` — health check
 - Queues `TextInputEvent` / `ImageInputEvent` on message; queues `DropSessionEvent` on disconnect
 
-### Sender abstractions (`agent/core/sender.py`)
-- `MessageSender` ABC — bound reply handle for a single conversation turn
-  - Methods: `send(text)`, `send_image(path)`, `send_file(path)`, `react(emoji)`, `start_thinking()`, `end_thinking()`
-- `MessageSource` ABC — background task that receives inbound messages
-- `NullSender` / `NullSource` — no-op implementations
-- Lives in `core/` so events and scheduler can depend on it without reaching into `messaging/`
+### Channel and Gateway (`agent/core/messaging.py`)
+- **Channel** — ABC for a bound reply handle for a single conversation turn
+  - Methods: `send(text)`, `start_thinking()`, `end_thinking()`, `register_tools(registry)`
+  - Concrete backends (Feishu, WebSocket) implement `register_tools` to selectively add features like reactions or file sending as standard agent tools.
+- **Gateway** — ABC for a background task that receives inbound messages and queues events
+- Decouples core logic from messaging backends: core depends on `Channel`/`Gateway` abstractions, not concrete providers.
 
 ## 4. Tools
 
@@ -130,7 +130,7 @@ This document specifies a system-level autonomous LLM agent. The agent runs on t
 | `use_skill` | Load detailed instructions for a named skill |
 | `read_image` | Read image file as vision content block (only when `vision_support=true`) |
 
-### Human-input-only tools (registered per `HumanInputOrchestrator`)
+### Channel-specific tools (registered via `Channel.register_tools`)
 
 | Tool | Description |
 |------|-------------|
@@ -278,7 +278,7 @@ agent/
 ├── api/
 │   └── server.py                # ApiService ABC + FastAPI + WebSocket
 ├── core/
-│   ├── sender.py                # MessageSender/MessageSource ABCs + NullSender/NullSource
+│   ├── messaging.py             # Channel ABC + Gateway ABC
 │   ├── events.py                # Event types
 │   ├── runtime.py               # Runtime ABC, ContainerRuntime, HostRuntime
 │   └── settings.py              # Configuration (Pydantic)
@@ -289,12 +289,12 @@ agent/
 │   ├── prompt.py                # SystemPromptBuilder
 │   └── types.py                 # Shared LLM type views
 ├── messaging/
-│   ├── feishu.py                # Feishu source + sender
-│   ├── source.py                # MessageSource factory
-│   └── websocket.py             # WebSocketSender
+│   ├── feishu.py                # FeishuGateway + FeishuChannel
+│   ├── gateway.py               # create_gateway factory
+│   └── websocket.py             # WebSocketChannel
 └── tools/
     ├── registry.py              # ToolRegistry (OCP)
-    ├── toolbox.py               # Tool implementations (default + human-input-only)
+    ├── toolbox.py               # Tool implementations (default)
     ├── skill.py                 # SkillLoader
     ├── cron.py                  # CronLoader + CronJobDef
     └── markdown.py              # YAML frontmatter parser
@@ -305,11 +305,11 @@ agent/
 One-way, no cycles:
 
 ```
-core/           sender, events, settings, runtime   (no agent imports)
+core/           channel, events, settings, runtime   (no agent imports)
   ↑
 tools/          → core/
 llm/            → core/, tools/
-messaging/      → core/
+messaging/      → core/, gateway
 api/            → core/, messaging/websocket
   ↑
 engine/         → core/, llm/, tools/, messaging/, api/
@@ -321,6 +321,6 @@ main.py         → engine/, core/settings
 
 - **Single Responsibility**: Each class has one clear purpose (Agent ≠ ToolRegistry ≠ PromptBuilder ≠ Orchestrator)
 - **Open/Closed**: New tools added via `ToolRegistry.register()` — no existing code changes
-- **Liskov Substitution**: `Runtime` implementations are interchangeable; `MessageSource` implementations are interchangeable
-- **Interface Segregation**: `Runtime` ABC is focused; `MessageSender` ABC is minimal; `SchedulerContext` Protocol exposes only what the scheduler needs
-- **Dependency Inversion**: Core depends on abstractions, not concretions. No module-level singletons — everything wired via composition root (`App`)
+- **Liskov Substitution**: `Runtime` implementations are interchangeable; `Gateway` implementations are interchangeable
+- **Interface Segregation**: `Runtime` ABC is focused; `Channel` ABC is minimal; `SchedulerContext` Protocol exposes only what the scheduler needs
+- **Dependency Inversion**: Core depends on abstractions, not concretions. No module-level singletons — everything wired via composition root (`App`). Factories like `create_gateway` and `create_api_service` return `Optional` types instead of null objects when features are disabled.
