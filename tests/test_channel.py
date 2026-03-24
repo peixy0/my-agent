@@ -1,10 +1,22 @@
 """Tests for Channel ABC and the register_tools pattern."""
 
+from unittest.mock import MagicMock
+
 import pytest
 
 from agent.core.messaging import Channel
+from agent.llm.agent import Agent
 from agent.llm.types import ToolContent
 from agent.tools.registry import ToolRegistry
+
+
+def _make_agent() -> Agent:
+    """Return an Agent with stub dependencies (not intended for LLM calls)."""
+    return Agent(
+        llm_client=MagicMock(),
+        model="test-model",
+        tool_registry=ToolRegistry(),
+    )
 
 
 class _NoOpChannel(Channel):
@@ -85,15 +97,12 @@ class TestHumanInputOrchestratorRegistersChannelTools:
 
     def test_channel_tools_in_orchestrator_registry(self) -> None:
         from agent.llm.agent import HumanInputOrchestrator
-        from agent.tools.registry import ToolRegistry
-
-        base_registry = ToolRegistry()
-        channel = _RichChannel()
 
         orchestrator = HumanInputOrchestrator(
             model="test-model",
-            tool_registry=base_registry,
-            sender=channel,
+            tool_registry=ToolRegistry(),
+            sender=_RichChannel(),
+            agent=_make_agent(),
         )
 
         names = [
@@ -105,15 +114,17 @@ class TestHumanInputOrchestratorRegistersChannelTools:
 
     def test_no_channel_tools_for_no_op_channel(self) -> None:
         from agent.llm.agent import HumanInputOrchestrator
-        from agent.tools.registry import ToolRegistry
-
-        base_registry = ToolRegistry()
-        channel = _NoOpChannel()
 
         orchestrator = HumanInputOrchestrator(
             model="test-model",
-            tool_registry=base_registry,
-            sender=channel,
+            tool_registry=ToolRegistry(),
+            sender=_NoOpChannel(),
+            agent=_make_agent(),
         )
 
-        assert orchestrator.tool_registry.tool_schemas() == []
+        names = [
+            s["function"]["name"] for s in orchestrator.tool_registry.tool_schemas()
+        ]
+        assert names == ["agent"], (
+            "Only the built-in agent tool should be registered for a no-op channel"
+        )

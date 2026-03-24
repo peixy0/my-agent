@@ -154,6 +154,7 @@ SYSTEM EVENT: Heartbeat""",
             self.model_name,
             self.tool_registry,
             event.sender,
+            self.agent,
         )
         await self.agent.run(prompt, self.conversation.messages, orchestrator)
         logger.info("Heartbeat cycle completed")
@@ -178,6 +179,7 @@ SYSTEM EVENT: Scheduled task '{event.task_name}'
             self.model_name,
             self.tool_registry,
             event.sender,
+            self.agent,
         )
         await self.agent.run(prompt, self.conversation.messages, orchestrator)
         logger.info(f"Cron task '{event.task_name}' completed")
@@ -206,6 +208,7 @@ Timezone: {now.tzinfo}
             self.model_name,
             self.tool_registry,
             event.sender,
+            self.agent,
         )
         response = await self.agent.run(
             prompt, self.conversation.messages, orchestrator
@@ -259,6 +262,7 @@ Timezone: {now.tzinfo}
             self.model_name,
             self.tool_registry,
             event.sender,
+            self.agent,
         )
         response = await self.agent.run(
             prompt, self.conversation.messages, orchestrator

@@ -6,6 +6,8 @@ Tool registration is handled externally by ToolRegistry (SRP).
 System prompt construction is handled by SystemPromptBuilder (SRP).
 """
 
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
@@ -143,15 +145,86 @@ def _strip_thought(content: str | None) -> str:
     return re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
 
 
+class SubagentOrchestrator(Orchestrator):
+    """Orchestrator for isolated subagent tasks.
+
+    Captures the final text response without forwarding to a Channel.
+    Does not receive the agent tool — subagents cannot spawn further subagents.
+    """
+
+    def __init__(self, model: str, tool_registry: ToolRegistry) -> None:
+        super().__init__(model, tool_registry)
+        self.output: str = ""
+
+    @override
+    async def _before_tool_use(self, message: MessageView) -> None:
+        pass
+
+    @override
+    async def _on_final_response(self, content: str) -> None:
+        self.output = _strip_thought(content)
+
+
+def _register_agent_tool(registry: ToolRegistry, agent: Agent) -> None:
+    """Register the agent tool on an orchestrator's tool registry.
+
+    Snapshots the registry before the tool is added so the spawned
+    SubagentOrchestrator inherits all other tools but not this one,
+    preventing recursive subagent spawning.
+    """
+    subagent_registry = registry.clone()
+
+    async def run_agent(task: str, system_prompt: str) -> ToolContent:
+        """
+        Run an isolated subagent to handle a specific, self-contained task.
+
+        The subagent has access to the same tools and runs with a fresh conversation.
+        It cannot spawn further subagents.
+        Use this to delegate well-defined, isolated work units that can be
+        completed independently of the current conversation context.
+        Returns the final text response from the subagent.
+        """
+        messages: list[dict[str, Any]] = [{"role": "user", "content": task}]
+        subagent_orchestrator = SubagentOrchestrator(agent.model, subagent_registry)
+        await agent.run(system_prompt, messages, subagent_orchestrator)
+        return ToolContent.from_dict(
+            "success", {"output": subagent_orchestrator.output}
+        )
+
+    registry.register(
+        run_agent,
+        {
+            "type": "object",
+            "properties": {
+                "task": {
+                    "type": "string",
+                    "description": (
+                        "The task description for the subagent to execute. "
+                        "Provide full context as the subagent has no conversation history."
+                    ),
+                },
+                "system_prompt": {
+                    "type": "string",
+                    "description": "System prompt for the subagent.",
+                },
+            },
+            "required": ["task", "system_prompt"],
+        },
+        name="agent",
+    )
+
+
 class BackgroundOrchestrator(Orchestrator):
     def __init__(
         self,
         model: str,
         tool_registry: ToolRegistry,
         sender: Channel,
+        agent: Agent,
     ) -> None:
         super().__init__(model, tool_registry)
         self.sender = sender
+        _register_agent_tool(self.tool_registry, agent)
 
     @override
     async def _before_tool_use(self, message: MessageView) -> None:
@@ -170,9 +243,11 @@ class HumanInputOrchestrator(Orchestrator):
         model: str,
         tool_registry: ToolRegistry,
         sender: Channel,
+        agent: Agent,
     ) -> None:
         super().__init__(model, tool_registry)
         self.sender = sender
+        _register_agent_tool(self.tool_registry, agent)
         sender.register_tools(self.tool_registry)
 
     @override
