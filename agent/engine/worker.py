@@ -12,6 +12,7 @@ per active session — and enqueues CronEvents onto the conversation queue.
 import asyncio
 import base64
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -30,12 +31,10 @@ from agent.core.messaging import Channel
 from agent.core.settings import Settings
 from agent.llm.agent import (
     Agent,
-    BackgroundOrchestrator,
-    HumanInputOrchestrator,
+    OrchestratorFactory,
 )
 from agent.llm.prompt import SystemPromptBuilder
 from agent.tools.cron import CronJobDef, CronLoader
-from agent.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -66,20 +65,25 @@ class ConversationWorker:
     def __init__(
         self,
         settings: Settings,
-        model_name: str,
         agent: Agent,
-        tool_registry: ToolRegistry,
         prompt_builder: SystemPromptBuilder,
+        orchestrator_factory: OrchestratorFactory,
     ) -> None:
         self.settings = settings
-        self.model_name = model_name
         self.agent = agent
-        self.tool_registry = tool_registry
         self.prompt_builder = prompt_builder
+        self.orchestrator_factory = orchestrator_factory
         self.queue: asyncio.Queue[WorkerEvent] = asyncio.Queue()
         self.conversation = Conversation()
         self.heartbeat_event: HeartbeatEvent | None = None
         self.heartbeat_task: asyncio.Task[None] | None = None
+        self.event_handlers: dict[type, Callable[..., Awaitable[None]]] = {
+            HeartbeatEvent: self._process_heartbeat,
+            CronEvent: self._process_cron,
+            NewSessionEvent: self._process_new_session,
+            TextInputEvent: self._process_text_input,
+            ImageInputEvent: self._process_image_input,
+        }
 
     async def _compress_conversation(self, sender: Channel) -> None:
         """
@@ -137,6 +141,7 @@ class ConversationWorker:
     async def _process_heartbeat(self, event: HeartbeatEvent) -> None:
         if event.interval_seconds <= 0:
             return
+        self.heartbeat_event = event
         logger.info("Processing heartbeat")
         prompt = self.prompt_builder.build_with_context(["HEARTBEAT.md"])
         now, current_datetime = _format_current_datetime()
@@ -150,13 +155,7 @@ Timezone: {now.tzinfo}
 SYSTEM EVENT: Heartbeat""",
             }
         ]
-        orchestrator = BackgroundOrchestrator(
-            self.model_name,
-            self.prompt_builder,
-            self.tool_registry,
-            event.sender,
-            self.agent,
-        )
+        orchestrator = self.orchestrator_factory.make_background(event.sender)
         await self.agent.run(prompt, self.conversation.messages, orchestrator)
         logger.info("Heartbeat cycle completed")
 
@@ -176,13 +175,7 @@ SYSTEM EVENT: Scheduled task '{event.task_name}'
 {event.prompt}""",
             }
         ]
-        orchestrator = BackgroundOrchestrator(
-            self.model_name,
-            self.prompt_builder,
-            self.tool_registry,
-            event.sender,
-            self.agent,
-        )
+        orchestrator = self.orchestrator_factory.make_background(event.sender)
         await self.agent.run(prompt, self.conversation.messages, orchestrator)
         logger.info(f"Cron task '{event.task_name}' completed")
 
@@ -206,13 +199,7 @@ Timezone: {now.tzinfo}
         prompt = self.prompt_builder.build_with_conversation_summary(
             self.conversation.previous_summary
         )
-        orchestrator = HumanInputOrchestrator(
-            self.model_name,
-            self.prompt_builder,
-            self.tool_registry,
-            event.sender,
-            self.agent,
-        )
+        orchestrator = self.orchestrator_factory.make_human_input(event.sender)
         response = await self.agent.run(
             prompt, self.conversation.messages, orchestrator
         )
@@ -261,13 +248,7 @@ Timezone: {now.tzinfo}
         prompt = self.prompt_builder.build_with_conversation_summary(
             self.conversation.previous_summary
         )
-        orchestrator = HumanInputOrchestrator(
-            self.model_name,
-            self.prompt_builder,
-            self.tool_registry,
-            event.sender,
-            self.agent,
-        )
+        orchestrator = self.orchestrator_factory.make_human_input(event.sender)
         response = await self.agent.run(
             prompt, self.conversation.messages, orchestrator
         )
@@ -283,17 +264,9 @@ Timezone: {now.tzinfo}
             if self.heartbeat_task:
                 self.heartbeat_task.cancel()
             try:
-                if isinstance(event, HeartbeatEvent):
-                    self.heartbeat_event = event
-                    await self._process_heartbeat(event)
-                elif isinstance(event, CronEvent):
-                    await self._process_cron(event)
-                elif isinstance(event, NewSessionEvent):
-                    await self._process_new_session(event)
-                elif isinstance(event, TextInputEvent):
-                    await self._process_text_input(event)
-                elif isinstance(event, ImageInputEvent):
-                    await self._process_image_input(event)
+                handler = self.event_handlers.get(type(event))
+                if handler:
+                    await handler(event)
                 else:
                     logger.warning(f"Unexpected event type in worker: {type(event)}")
             except Exception as e:

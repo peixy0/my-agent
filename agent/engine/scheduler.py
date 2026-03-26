@@ -16,6 +16,7 @@ wraps aiocron and enqueues CronEvents onto the session's ConversationWorker.
 import asyncio
 import contextlib
 import logging
+from collections.abc import Awaitable, Callable
 from typing import Protocol
 
 from agent.core.events import (
@@ -27,10 +28,9 @@ from agent.core.events import (
 )
 from agent.core.settings import Settings
 from agent.engine.worker import ConversationWorker, CronWorker
-from agent.llm.agent import Agent
+from agent.llm.agent import Agent, OrchestratorFactory
 from agent.llm.prompt import SystemPromptBuilder
 from agent.tools.cron import CronLoader
-from agent.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -39,10 +39,9 @@ class SchedulerContext(Protocol):
     """Read-only view of the application dependencies used by the scheduler."""
 
     settings: Settings
-    model_name: str
     agent: Agent
-    tool_registry: ToolRegistry
     prompt_builder: SystemPromptBuilder
+    orchestrator_factory: OrchestratorFactory
     event_queue: asyncio.Queue[AgentEvent]
 
 
@@ -68,16 +67,23 @@ class Scheduler:
         self.workers = {}
         self.cron_workers = {}
         self.cron_loader = CronLoader(app.settings.crons_dir)
+        self.text_commands: list[
+            tuple[str, Callable[[TextInputEvent], Awaitable[None]]]
+        ] = [
+            ("/heartbeat", self._cmd_heartbeat),
+            ("/cron", self._cmd_cron),
+            ("/new", self._cmd_new),
+            ("/drop", self._cmd_drop),
+        ]
 
     def _get_or_create_worker(self, chat_id: str) -> ConversationWorker:
         """Return the existing worker for *chat_id* or create and start a new one."""
         if chat_id not in self.workers:
             worker = ConversationWorker(
                 settings=self.app.settings,
-                model_name=self.app.model_name,
                 agent=self.app.agent,
-                tool_registry=self.app.tool_registry,
                 prompt_builder=self.app.prompt_builder,
+                orchestrator_factory=self.app.orchestrator_factory,
             )
             self.workers[chat_id] = (worker, asyncio.create_task(worker.run()))
             logger.info(f"Started conversation worker for chat_id={chat_id}")
@@ -206,17 +212,11 @@ class Scheduler:
 
     async def _dispatch_text(self, event: TextInputEvent) -> None:
         """Route a TextInputEvent: intercept slash commands, forward the rest."""
-        msg = event.message
-        if msg.startswith("/heartbeat"):
-            await self._cmd_heartbeat(event)
-        elif msg.startswith("/cron"):
-            await self._cmd_cron(event)
-        elif msg.startswith("/new"):
-            await self._cmd_new(event)
-        elif msg.startswith("/drop"):
-            await self._cmd_drop(event)
-        else:
-            await self._get_or_create_worker(event.chat_id).queue.put(event)
+        for prefix, handler in self.text_commands:
+            if event.message.startswith(prefix):
+                await handler(event)
+                return
+        await self._get_or_create_worker(event.chat_id).queue.put(event)
 
     async def _dispatch(self, event: AgentEvent) -> None:
         """Route an inbound event to the appropriate handler or worker queue."""

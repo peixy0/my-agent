@@ -14,7 +14,7 @@ from agent.core.events import AgentEvent
 from agent.core.messaging import Gateway
 from agent.core.runtime import ContainerRuntime, HostRuntime
 from agent.core.settings import Settings
-from agent.llm.agent import Agent
+from agent.llm.agent import Agent, DefaultOrchestratorFactory, OrchestratorFactory
 from agent.llm.openai import OpenAIProvider
 from agent.llm.prompt import SystemPromptBuilder
 from agent.messaging.gateway import create_gateway
@@ -74,6 +74,12 @@ class App:
             self.llm_client,
             self.model_name,
             self.tool_registry,
+        )
+        self.orchestrator_factory: OrchestratorFactory = DefaultOrchestratorFactory(
+            model=self.model_name,
+            prompt_builder=self.prompt_builder,
+            tool_registry=self.tool_registry,
+            agent=self.agent,
         )
 
         self.background_tasks: list[asyncio.Task] = []

@@ -225,14 +225,11 @@ class BackgroundOrchestrator(Orchestrator):
     def __init__(
         self,
         model: str,
-        prompt_builder: SystemPromptBuilder,
         tool_registry: ToolRegistry,
         sender: Channel,
-        agent: Agent,
     ) -> None:
         super().__init__(model, tool_registry)
         self.sender = sender
-        _register_agent_tool(prompt_builder, self.tool_registry, agent)
 
     @override
     async def _before_tool_use(self, message: MessageView) -> None:
@@ -249,14 +246,11 @@ class HumanInputOrchestrator(Orchestrator):
     def __init__(
         self,
         model: str,
-        prompt_builder: SystemPromptBuilder,
         tool_registry: ToolRegistry,
         sender: Channel,
-        agent: Agent,
     ) -> None:
         super().__init__(model, tool_registry)
         self.sender = sender
-        _register_agent_tool(prompt_builder, self.tool_registry, agent)
         sender.register_tools(self.tool_registry)
 
     @override
@@ -303,7 +297,7 @@ class Agent:
         messages: list[dict[str, Any]],
         orchestrator: Orchestrator,
         system_messages: list[dict[str, Any]],
-    ) -> Any:
+    ) -> CompletionResponseView:
         """
         Sends a chat message to the LLM and handles the response.
 
@@ -347,7 +341,7 @@ class Agent:
         system_prompt: str,
         messages: list[dict[str, Any]],
         orchestrator: Orchestrator,
-    ) -> Any:
+    ) -> CompletionResponseView:
         """Run a single turn of the agent conversation."""
         system_messages = self._build_system_messages(system_prompt)
         return await self._chat(messages, orchestrator, system_messages)
@@ -460,3 +454,42 @@ class Agent:
         summary = response.choices[0].message.content or ""
         logger.info(f"Conversation compressed to {response.usage.total_tokens} tokens")
         return summary.strip()
+
+
+class OrchestratorFactory(Protocol):
+    """Creates per-turn orchestrators for a conversation session."""
+
+    def make_human_input(self, sender: Channel) -> HumanInputOrchestrator: ...
+    def make_background(self, sender: Channel) -> BackgroundOrchestrator: ...
+
+
+class DefaultOrchestratorFactory:
+    """Concrete factory wired by the composition root.
+
+    Holds the shared dependencies needed to fully wire each orchestrator:
+    model name, prompt builder, tool registry, and agent reference.
+    _register_agent_tool is called here so orchestrators remain ignorant
+    of Agent and SystemPromptBuilder.
+    """
+
+    def __init__(
+        self,
+        model: str,
+        prompt_builder: SystemPromptBuilder,
+        tool_registry: ToolRegistry,
+        agent: Agent,
+    ) -> None:
+        self.model = model
+        self.prompt_builder = prompt_builder
+        self.tool_registry = tool_registry
+        self.agent = agent
+
+    def make_human_input(self, sender: Channel) -> HumanInputOrchestrator:
+        orch = HumanInputOrchestrator(self.model, self.tool_registry, sender)
+        _register_agent_tool(self.prompt_builder, orch.tool_registry, self.agent)
+        return orch
+
+    def make_background(self, sender: Channel) -> BackgroundOrchestrator:
+        orch = BackgroundOrchestrator(self.model, self.tool_registry, sender)
+        _register_agent_tool(self.prompt_builder, orch.tool_registry, self.agent)
+        return orch

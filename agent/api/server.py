@@ -48,19 +48,19 @@ class UvicornApiService(ApiService):
     """Uvicorn-based FastAPI service."""
 
     def __init__(self, app: FastAPI, host: str, port: int):
-        self._app = app
-        self._host = host
-        self._port = port
+        self.app = app
+        self.host = host
+        self.port = port
 
     async def run(self) -> None:
         config = uvicorn.Config(
-            self._app,
-            host=self._host,
-            port=self._port,
+            self.app,
+            host=self.host,
+            port=self.port,
             log_level="info",
         )
         server = uvicorn.Server(config)
-        logger.info(f"Starting API server on {self._host}:{self._port}")
+        logger.info(f"Starting API server on {self.host}:{self.port}")
         await server.serve()
 
 

@@ -81,7 +81,6 @@ This document specifies a system-level autonomous LLM agent. The agent runs on t
 ### LLM Client (`agent/llm/`)
 - `CompletionClient` Protocol used by `Agent` — only requires `do_completion()`
 - `OpenAIProvider` — OpenAI-compatible API with retry logic
-- `LLMFactory` — creates `OpenAIProvider` from settings
 
 ### Runtime (`agent/core/runtime.py`)
 - `Runtime` ABC — Strategy pattern for command execution
@@ -96,7 +95,7 @@ This document specifies a system-level autonomous LLM agent. The agent runs on t
 - Slash commands are parsed inside `Scheduler._dispatch_text` and translated to typed events
 
 ### Workers (`agent/engine/worker.py`)
-- `ConversationWorker` — owns a private asyncio.Queue, processes events sequentially; constructed with explicit deps (`Settings`, `model_name`, `Agent`, `ToolRegistry`, `SystemPromptBuilder`) — no dependency on `SchedulerContext`
+- `ConversationWorker` — owns a private asyncio.Queue, processes events sequentially; constructed with explicit deps (`Settings`, `Agent`, `SystemPromptBuilder`, `OrchestratorFactory`) — no dependency on `SchedulerContext`
 - `CronWorker` — manages aiocron lifecycle for one chat session; constructed with `chat_id`, an `asyncio.Queue`, and `CronLoader` — no dependency on `ConversationWorker`
 
 ### ApiService (`agent/api/server.py`)
@@ -239,7 +238,7 @@ When `context_auto_compression_enabled` is true and `total_tokens` reaches `cont
 
 `Scheduler` routes each event to a `ConversationWorker` keyed by `chat_id`. Workers process events sequentially; different chats run concurrently.
 
-`SchedulerContext` is a `Protocol` capturing only what the scheduler needs (`settings`, `model_name`, `agent`, `tool_registry`, `prompt`, `event_queue`) — `App` satisfies it structurally, avoiding upward imports.
+`SchedulerContext` is a `Protocol` capturing only what the scheduler needs (`settings`, `agent`, `prompt_builder`, `orchestrator_factory`, `event_queue`) — `App` satisfies it structurally, avoiding upward imports.
 
 ## 10. HTTP / WebSocket API
 
@@ -283,8 +282,7 @@ agent/
 │   ├── runtime.py               # Runtime ABC, ContainerRuntime, HostRuntime
 │   └── settings.py              # Configuration (Pydantic)
 ├── llm/
-│   ├── agent.py                 # Agent + Orchestrator ABC + BackgroundOrchestrator + HumanInputOrchestrator
-│   ├── factory.py               # LLM client factory
+│   ├── agent.py                 # Agent + Orchestrator ABC + BackgroundOrchestrator + HumanInputOrchestrator + OrchestratorFactory + DefaultOrchestratorFactory
 │   ├── openai.py                # OpenAI implementation
 │   ├── prompt.py                # SystemPromptBuilder
 │   └── types.py                 # Shared LLM type views

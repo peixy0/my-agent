@@ -55,6 +55,9 @@ class App:
         self.llm_client = OpenAIProvider(url=settings.openai_base_url, api_key=settings.openai_api_key)
         self.model_name = settings.openai_model
         self.agent = Agent(self.llm_client, self.model_name, self.tool_registry)
+        self.orchestrator_factory = DefaultOrchestratorFactory(
+            model=self.model_name, prompt_builder=self.prompt_builder,
+            tool_registry=self.tool_registry, agent=self.agent)
 
     async def run(self) -> None:
         os.chdir(self.settings.cwd)
@@ -333,8 +336,7 @@ agent/
 │   ├── runtime.py               # Runtime ABC, ContainerRuntime, HostRuntime
 │   └── settings.py              # Configuration (Pydantic)
 ├── llm/
-│   ├── agent.py                 # Agent + Orchestrator ABC + BackgroundOrchestrator + HumanInputOrchestrator
-│   ├── factory.py               # LLM client factory
+│   ├── agent.py                 # Agent + Orchestrator ABC + BackgroundOrchestrator + HumanInputOrchestrator + OrchestratorFactory + DefaultOrchestratorFactory
 │   ├── openai.py                # OpenAI implementation
 │   ├── prompt.py                # SystemPromptBuilder
 │   └── types.py                 # Shared LLM type definitions

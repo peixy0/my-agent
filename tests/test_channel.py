@@ -1,24 +1,10 @@
 """Tests for Channel ABC and the register_tools pattern."""
 
-from unittest.mock import MagicMock
-
 import pytest
 
 from agent.core.messaging import Channel
-from agent.llm.agent import Agent
-from agent.llm.prompt import SystemPromptBuilder
 from agent.llm.types import ToolContent
 from agent.tools.registry import ToolRegistry
-from agent.tools.skill import SkillLoader
-
-
-def _make_agent() -> Agent:
-    """Return an Agent with stub dependencies (not intended for LLM calls)."""
-    return Agent(
-        llm_client=MagicMock(),
-        model="test-model",
-        tool_registry=ToolRegistry(),
-    )
 
 
 class _NoOpChannel(Channel):
@@ -102,10 +88,8 @@ class TestHumanInputOrchestratorRegistersChannelTools:
 
         orchestrator = HumanInputOrchestrator(
             model="test-model",
-            prompt_builder=SystemPromptBuilder(SkillLoader()),
             tool_registry=ToolRegistry(),
             sender=_RichChannel(),
-            agent=_make_agent(),
         )
 
         names = [
@@ -120,15 +104,13 @@ class TestHumanInputOrchestratorRegistersChannelTools:
 
         orchestrator = HumanInputOrchestrator(
             model="test-model",
-            prompt_builder=SystemPromptBuilder(SkillLoader()),
             tool_registry=ToolRegistry(),
             sender=_NoOpChannel(),
-            agent=_make_agent(),
         )
 
         names = [
             s["function"]["name"] for s in orchestrator.tool_registry.tool_schemas()
         ]
-        assert names == ["agent"], (
-            "Only the built-in agent tool should be registered for a no-op channel"
+        assert names == [], (
+            "No tools should be registered for a no-op channel without a factory"
         )
