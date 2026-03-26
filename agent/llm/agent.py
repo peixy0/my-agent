@@ -19,6 +19,7 @@ from typing import Any, Protocol, override
 import jsonschema
 
 from agent.core.messaging import Channel
+from agent.llm.prompt import SystemPromptBuilder
 from agent.llm.types import (
     CompletionResponseView,
     MessageView,
@@ -165,7 +166,9 @@ class SubagentOrchestrator(Orchestrator):
         self.output = _strip_thought(content)
 
 
-def _register_agent_tool(registry: ToolRegistry, agent: Agent) -> None:
+def _register_agent_tool(
+    prompt_builder: SystemPromptBuilder, registry: ToolRegistry, agent: Agent
+) -> None:
     """Register the agent tool on an orchestrator's tool registry.
 
     Snapshots the registry before the tool is added so the spawned
@@ -186,7 +189,11 @@ def _register_agent_tool(registry: ToolRegistry, agent: Agent) -> None:
         """
         messages: list[dict[str, Any]] = [{"role": "user", "content": task}]
         subagent_orchestrator = SubagentOrchestrator(agent.model, subagent_registry)
-        await agent.run(system_prompt, messages, subagent_orchestrator)
+        await agent.run(
+            prompt_builder.build_for_subagent(system_prompt),
+            messages,
+            subagent_orchestrator,
+        )
         return ToolContent.from_dict(
             "success", {"output": subagent_orchestrator.output}
         )
@@ -218,13 +225,14 @@ class BackgroundOrchestrator(Orchestrator):
     def __init__(
         self,
         model: str,
+        prompt_builder: SystemPromptBuilder,
         tool_registry: ToolRegistry,
         sender: Channel,
         agent: Agent,
     ) -> None:
         super().__init__(model, tool_registry)
         self.sender = sender
-        _register_agent_tool(self.tool_registry, agent)
+        _register_agent_tool(prompt_builder, self.tool_registry, agent)
 
     @override
     async def _before_tool_use(self, message: MessageView) -> None:
@@ -241,13 +249,14 @@ class HumanInputOrchestrator(Orchestrator):
     def __init__(
         self,
         model: str,
+        prompt_builder: SystemPromptBuilder,
         tool_registry: ToolRegistry,
         sender: Channel,
         agent: Agent,
     ) -> None:
         super().__init__(model, tool_registry)
         self.sender = sender
-        _register_agent_tool(self.tool_registry, agent)
+        _register_agent_tool(prompt_builder, self.tool_registry, agent)
         sender.register_tools(self.tool_registry)
 
     @override

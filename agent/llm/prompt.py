@@ -40,34 +40,34 @@ class SystemPromptBuilder:
                 bootstrap_context += f"# {filename}\n\n{content}\n\n"
         return bootstrap_context
 
-    def build(self) -> str:
-        """Build the full system prompt with current datetime and skills."""
+    def _build_minimum(self) -> str:
+        """Build a minimal system prompt without workspace context."""
         operating_system = platform.system()
-        bootstrap_files = ["IDENTITY.md", "USER.md", "MEMORY.md", "CONTEXT.md"]
-        bootstrap_context = self._load_workspace_files(bootstrap_files)
-
         skill_summaries = self.skill.discover_skills()
         skills_text = ""
         if skill_summaries:
-            skills_text = "Available specialized skills:\n"
+            skills_text = "# SKILLS\n\nAvailable specialized skills:\n\n"
             for s in skill_summaries:
                 skills_text += f"- {s.name}: {s.description}\n"
             skills_text += "\nUse the `use_skill` tool for detailed instructions."
 
-        return f"""
-You are an autonomous agent acting as a personal assistant.
-
-**Host Environment:** {operating_system}
+        return f"""**Host Environment:** {operating_system}
 
 You are provided with a set of tools and skills to help you with your tasks. Use them wisely and proactively to achieve the best results for the user.
 
-# Skills
-
 {skills_text}
+"""
 
-# Workspace
+    def build(self) -> str:
+        """Build the full system prompt with current datetime and skills."""
+        bootstrap_files = ["IDENTITY.md", "USER.md", "MEMORY.md", "CONTEXT.md"]
+        bootstrap_context = self._load_workspace_files(bootstrap_files)
 
-Treat your current working directory as the single global workspace for file operations unless explicitly instructed otherwise.
+        minimum_prompt = self._build_minimum()
+
+        return f"""You are an autonomous agent acting as a personal assistant.
+
+{minimum_prompt}
 
 {bootstrap_context}
 """
@@ -87,15 +87,15 @@ The following is a compressed summary of the conversation history so far:
 {summary_section}
 """
 
-    def _build_with_extra_file(self, filename: str) -> str:
-        extra = self._load_workspace_files([filename])
+    def build_with_context(self, context_files: list[str]) -> str:
+        extra_context = self._load_workspace_files(context_files)
         return f"""{self.build()}
 
-{extra}
+{extra_context}
 """
 
-    def build_for_heartbeat(self) -> str:
-        return self._build_with_extra_file("HEARTBEAT.md")
+    def build_for_subagent(self, system_prompt: str) -> str:
+        return f"""{system_prompt}
 
-    def build_for_cron(self) -> str:
-        return self._build_with_extra_file("CRON.md")
+{self.build()}
+"""

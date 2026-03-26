@@ -51,7 +51,7 @@ class App:
         register_default_tools(self.tool_registry, self.runtime, self.skill, settings)
         self.gateway = create_gateway(settings, self.event_queue, self.runtime)
         self.api_service = create_api_service(settings, self.event_queue)
-        self.prompt = SystemPromptBuilder(self.skill)
+        self.prompt_builder = SystemPromptBuilder(self.skill)
         self.llm_client = OpenAIProvider(url=settings.openai_base_url, api_key=settings.openai_api_key)
         self.model_name = settings.openai_model
         self.agent = Agent(self.llm_client, self.model_name, self.tool_registry)

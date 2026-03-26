@@ -63,7 +63,7 @@ class App:
             self.settings, self.event_queue
         )
 
-        self.prompt = SystemPromptBuilder(self.skill)
+        self.prompt_builder = SystemPromptBuilder(self.skill)
 
         self.llm_client = OpenAIProvider(
             url=self.settings.openai_base_url,

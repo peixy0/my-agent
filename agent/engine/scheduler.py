@@ -42,7 +42,7 @@ class SchedulerContext(Protocol):
     model_name: str
     agent: Agent
     tool_registry: ToolRegistry
-    prompt: SystemPromptBuilder
+    prompt_builder: SystemPromptBuilder
     event_queue: asyncio.Queue[AgentEvent]
 
 
@@ -77,7 +77,7 @@ class Scheduler:
                 model_name=self.app.model_name,
                 agent=self.app.agent,
                 tool_registry=self.app.tool_registry,
-                prompt=self.app.prompt,
+                prompt_builder=self.app.prompt_builder,
             )
             self.workers[chat_id] = (worker, asyncio.create_task(worker.run()))
             logger.info(f"Started conversation worker for chat_id={chat_id}")

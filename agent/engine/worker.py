@@ -69,13 +69,13 @@ class ConversationWorker:
         model_name: str,
         agent: Agent,
         tool_registry: ToolRegistry,
-        prompt: SystemPromptBuilder,
+        prompt_builder: SystemPromptBuilder,
     ) -> None:
         self.settings = settings
         self.model_name = model_name
         self.agent = agent
         self.tool_registry = tool_registry
-        self.prompt = prompt
+        self.prompt_builder = prompt_builder
         self.queue: asyncio.Queue[WorkerEvent] = asyncio.Queue()
         self.conversation = Conversation()
         self.heartbeat_event: HeartbeatEvent | None = None
@@ -138,7 +138,7 @@ class ConversationWorker:
         if event.interval_seconds <= 0:
             return
         logger.info("Processing heartbeat")
-        prompt = self.prompt.build_for_heartbeat()
+        prompt = self.prompt_builder.build_with_context(["HEARTBEAT.md"])
         now, current_datetime = _format_current_datetime()
         self.conversation = Conversation()
         self.conversation.messages = [
@@ -152,6 +152,7 @@ SYSTEM EVENT: Heartbeat""",
         ]
         orchestrator = BackgroundOrchestrator(
             self.model_name,
+            self.prompt_builder,
             self.tool_registry,
             event.sender,
             self.agent,
@@ -161,7 +162,7 @@ SYSTEM EVENT: Heartbeat""",
 
     async def _process_cron(self, event: CronEvent) -> None:
         logger.info(f"Processing cron task: {event.task_name}")
-        prompt = self.prompt.build_for_cron()
+        prompt = self.prompt_builder.build_with_context(["CRON.md"])
         now, current_datetime = _format_current_datetime()
         self.conversation = Conversation()
         self.conversation.messages = [
@@ -177,6 +178,7 @@ SYSTEM EVENT: Scheduled task '{event.task_name}'
         ]
         orchestrator = BackgroundOrchestrator(
             self.model_name,
+            self.prompt_builder,
             self.tool_registry,
             event.sender,
             self.agent,
@@ -201,11 +203,12 @@ Timezone: {now.tzinfo}
         logger.info(f"Processing text input: {event.message[:100]}...")
         await event.sender.start_thinking()
 
-        prompt = self.prompt.build_with_conversation_summary(
+        prompt = self.prompt_builder.build_with_conversation_summary(
             self.conversation.previous_summary
         )
         orchestrator = HumanInputOrchestrator(
             self.model_name,
+            self.prompt_builder,
             self.tool_registry,
             event.sender,
             self.agent,
@@ -255,11 +258,12 @@ Timezone: {now.tzinfo}
         logger.info("Processing image input")
         await event.sender.start_thinking()
 
-        prompt = self.prompt.build_with_conversation_summary(
+        prompt = self.prompt_builder.build_with_conversation_summary(
             self.conversation.previous_summary
         )
         orchestrator = HumanInputOrchestrator(
             self.model_name,
+            self.prompt_builder,
             self.tool_registry,
             event.sender,
             self.agent,

@@ -6,8 +6,10 @@ import pytest
 
 from agent.core.messaging import Channel
 from agent.llm.agent import Agent
+from agent.llm.prompt import SystemPromptBuilder
 from agent.llm.types import ToolContent
 from agent.tools.registry import ToolRegistry
+from agent.tools.skill import SkillLoader
 
 
 def _make_agent() -> Agent:
@@ -100,6 +102,7 @@ class TestHumanInputOrchestratorRegistersChannelTools:
 
         orchestrator = HumanInputOrchestrator(
             model="test-model",
+            prompt_builder=SystemPromptBuilder(SkillLoader()),
             tool_registry=ToolRegistry(),
             sender=_RichChannel(),
             agent=_make_agent(),
@@ -117,6 +120,7 @@ class TestHumanInputOrchestratorRegistersChannelTools:
 
         orchestrator = HumanInputOrchestrator(
             model="test-model",
+            prompt_builder=SystemPromptBuilder(SkillLoader()),
             tool_registry=ToolRegistry(),
             sender=_NoOpChannel(),
             agent=_make_agent(),
