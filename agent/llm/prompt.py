@@ -97,5 +97,5 @@ The following is a compressed summary of the conversation history so far:
     def build_for_subagent(self, system_prompt: str) -> str:
         return f"""{system_prompt}
 
-{self.build()}
+{self._build_minimum()}
 """
