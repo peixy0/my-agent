@@ -23,7 +23,7 @@ class Settings(BaseSettings):
 
     # Agent settings
     tool_timeout: int = 60
-    max_output_chars: int = 10_000
+    max_output_chars: int = 100_000
     web_search_proxy: str = ""
 
     # Workspace paths
@@ -37,7 +37,7 @@ class Settings(BaseSettings):
 
     # Context compression settings
     context_auto_compression_enabled: bool = False
-    context_max_tokens: int = 100000
+    context_max_tokens: int = 128_000
     context_num_keep_last: int = 9
 
     # Feishu settings

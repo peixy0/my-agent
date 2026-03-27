@@ -60,7 +60,13 @@ You are provided with a set of tools and skills to help you with your tasks. Use
 
     def build(self) -> str:
         """Build the full system prompt with current datetime and skills."""
-        bootstrap_files = ["IDENTITY.md", "USER.md", "MEMORY.md", "CONTEXT.md"]
+        bootstrap_files = [
+            "IDENTITY.md",
+            "USER.md",
+            "MEMORY.md",
+            "CONTEXT.md",
+            "TOOLS.md",
+        ]
         bootstrap_context = self._load_workspace_files(bootstrap_files)
 
         minimum_prompt = self._build_minimum()
@@ -80,7 +86,15 @@ You are provided with a set of tools and skills to help you with your tasks. Use
 """
 
     def build_for_subagent(self, system_prompt: str) -> str:
-        return f"""{system_prompt}
+        """Build the system prompt for subagent."""
+        agent_files = ["TOOLS.md"]
+        agent_context = self._load_workspace_files(agent_files)
 
-{self._build_minimum()}
+        minimum_prompt = self._build_minimum()
+
+        return f"""You are an autonomous agent acting as a personal assistant.
+
+{minimum_prompt}
+
+{agent_context}
 """

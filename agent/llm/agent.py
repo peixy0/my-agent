@@ -52,7 +52,7 @@ class Orchestrator(ABC):
         tool_registry: ToolRegistry,
     ):
         self.model = model
-        self.tool_registry = tool_registry.clone()
+        self.tool_registry = tool_registry
 
     @abstractmethod
     async def _before_tool_use(self, message: MessageView) -> None:
@@ -167,7 +167,10 @@ class SubagentOrchestrator(Orchestrator):
 
 
 def _register_agent_tool(
-    prompt_builder: SystemPromptBuilder, registry: ToolRegistry, agent: Agent
+    orchestrator: Orchestrator,
+    prompt_builder: SystemPromptBuilder,
+    tool_registry: ToolRegistry,
+    agent: Agent,
 ) -> None:
     """Register the agent tool on an orchestrator's tool registry.
 
@@ -175,7 +178,6 @@ def _register_agent_tool(
     SubagentOrchestrator inherits all other tools but not this one,
     preventing recursive subagent spawning.
     """
-    subagent_registry = registry.clone()
 
     async def run_agent(task: str, system_prompt: str) -> ToolContent:
         """
@@ -188,7 +190,7 @@ def _register_agent_tool(
         Returns the final text response from the subagent.
         """
         messages: list[dict[str, Any]] = [{"role": "user", "content": task}]
-        subagent_orchestrator = SubagentOrchestrator(agent.model, subagent_registry)
+        subagent_orchestrator = SubagentOrchestrator(agent.model, tool_registry)
         await agent.run(
             prompt_builder.build_for_subagent(system_prompt),
             messages,
@@ -198,7 +200,7 @@ def _register_agent_tool(
             "success", {"output": subagent_orchestrator.output}
         )
 
-    registry.register(
+    orchestrator.tool_registry.register(
         run_agent,
         {
             "type": "object",
@@ -521,11 +523,11 @@ class DefaultOrchestratorFactory:
         self.agent = agent
 
     def make_human_input(self, sender: Channel) -> HumanInputOrchestrator:
-        orch = HumanInputOrchestrator(self.model, self.tool_registry, sender)
-        _register_agent_tool(self.prompt_builder, orch.tool_registry, self.agent)
+        orch = HumanInputOrchestrator(self.model, self.tool_registry.clone(), sender)
+        _register_agent_tool(orch, self.prompt_builder, self.tool_registry, self.agent)
         return orch
 
     def make_background(self, sender: Channel) -> BackgroundOrchestrator:
-        orch = BackgroundOrchestrator(self.model, self.tool_registry, sender)
-        _register_agent_tool(self.prompt_builder, orch.tool_registry, self.agent)
+        orch = BackgroundOrchestrator(self.model, self.tool_registry.clone(), sender)
+        _register_agent_tool(orch, self.prompt_builder, self.tool_registry, self.agent)
         return orch
