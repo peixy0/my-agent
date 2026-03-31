@@ -110,9 +110,9 @@ class Orchestrator(ABC):
         tool_content: ToolContent
         try:
             args = json.loads(raw_arguments)
-            schema = self.tool_registry.get_schema(tool_name)
-            if schema:
-                jsonschema.validate(instance=args, schema=schema["parameters"])
+            validator = self.tool_registry.get_validator(tool_name)
+            if validator:
+                validator.validate(args)
             tool_content = await handler(**args)
         except json.JSONDecodeError as e:
             tool_content = ToolContent.from_dict(
@@ -318,6 +318,7 @@ class Agent:
         Returns:
             The LLM's response.
         """
+        tools = orchestrator.tool_registry.tool_schemas()
         while True:
             messages_to_be_sent = list(system_messages)
             messages_to_be_sent.extend(messages)
@@ -325,7 +326,7 @@ class Agent:
             response = await self.llm_client.do_completion(
                 model=self.model,
                 messages=messages_to_be_sent,
-                tools=orchestrator.tool_registry.tool_schemas(),
+                tools=tools,
                 # temperature=0.6,
                 # top_p=0.95,
                 # extra_body={"chat_template_kwargs": {"enable_thinking": True}},

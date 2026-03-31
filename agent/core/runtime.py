@@ -22,8 +22,8 @@ def _find_closest_block(content: str, search: str) -> str | None:
 
     Slides a window of the same line-count as *search* over *content* and
     returns the window with the highest SequenceMatcher ratio, provided it
-    exceeds 0.6 — low enough to catch whitespace/quote drift, high enough to
-    avoid returning a totally unrelated block.
+    exceeds 0.6.  Uses quick_ratio() as a cheap pre-filter and exits early
+    on a perfect match to avoid unnecessary work on large files.
     """
     search_lines = search.splitlines()
     content_lines = content.splitlines()
@@ -33,9 +33,14 @@ def _find_closest_block(content: str, search: str) -> str | None:
     best_ratio, best_start = 0.0, 0
     for i in range(len(content_lines) - n + 1):
         window = "\n".join(content_lines[i : i + n])
-        ratio = difflib.SequenceMatcher(None, search, window, autojunk=False).ratio()
+        sm = difflib.SequenceMatcher(None, search, window, autojunk=False)
+        if sm.quick_ratio() <= best_ratio:
+            continue
+        ratio = sm.ratio()
         if ratio > best_ratio:
             best_ratio, best_start = ratio, i
+            if ratio == 1.0:
+                break
     if best_ratio >= 0.6:
         return "\n".join(content_lines[best_start : best_start + n])
     return None
@@ -202,17 +207,26 @@ class ContainerRuntime(Runtime):
     async def read_file(
         self, filename: str, start_line: int = 1, limit: int = 500
     ) -> dict[str, Any]:
-        """Read content from a file in the container with pagination.
+        """Read a paginated slice of a file in the container.
 
-        Reads the full file via read_raw_bytes (base64 transfer) and slices
-        in Python, avoiding a second container exec round-trip.
+        Uses awk + sed inside the container so only the requested lines are
+        transferred, avoiding a full base64 round-trip for large files.
+        awk 'END{print NR}' counts records the same way Python splitlines()
+        does, unlike wc -l which only counts newline characters.
         """
-        raw = await self.read_raw_bytes(filename)
-        lines = raw.decode("utf-8", errors="replace").splitlines(keepends=True)
-        total_lines = len(lines)
+        quoted = shlex.quote(filename)
         start = max(1, start_line)
         end = start + limit - 1
-        content = "".join(lines[start - 1 : end])
+        cmd = f"awk 'END{{print NR}}' {quoted} && sed -n '{start},{end}p' {quoted}"
+        try:
+            stdout, stderr, return_code = await self._exec_in_container(cmd)
+            if return_code != 0:
+                raise Exception(stderr.strip())
+        except Exception as e:
+            raise AgentRuntimeException(f"Failed to read file {filename}: {e}") from e
+        first_newline = stdout.index("\n")
+        total_lines = int(stdout[:first_newline].strip())
+        content = stdout[first_newline + 1 :]
         return {
             "content": content,
             "total_lines": total_lines,
@@ -222,12 +236,12 @@ class ContainerRuntime(Runtime):
 
     @override
     async def write_file(self, filename: str, content: str) -> dict[str, Any]:
-        """Write content to a file in the container."""
+        """Write content to a file in the container via a single exec call."""
         parent_dir = str(Path(filename).parent)
-        mkdir_cmd = f"mkdir -p {shlex.quote(parent_dir)}"
-        _ = await self._exec_in_container(mkdir_cmd)
+        quoted_dir = shlex.quote(parent_dir)
+        quoted_file = shlex.quote(filename)
+        command = f"mkdir -p {quoted_dir} && base64 -d > {quoted_file}"
         encoded_bytes = base64.b64encode(content.encode("utf-8"))
-        command = f"base64 -d > {shlex.quote(filename)}"
         _, stderr, return_code = await self._exec_in_container(
             command, input_data=encoded_bytes
         )

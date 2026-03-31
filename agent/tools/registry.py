@@ -9,17 +9,20 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+import jsonschema
+
 logger = logging.getLogger(__name__)
 
 
 class ToolRegistry:
     """
-    Holds tool name -> (schema, handler) mappings.
+    Holds tool name -> (schema, handler, compiled validator) mappings.
     """
 
     def __init__(self):
         self.schemas: dict[str, dict[str, Any]] = {}
         self.handlers: dict[str, Callable[..., Awaitable[Any]]] = {}
+        self.validators: dict[str, jsonschema.Draft7Validator] = {}
 
     def register(
         self,
@@ -39,6 +42,11 @@ class ToolRegistry:
             "parameters": schema,
         }
         self.handlers[tool_name] = func
+        if schema:
+            self.validators[tool_name] = jsonschema.Draft7Validator(schema)
+
+    def get_validator(self, tool_name: str) -> jsonschema.Draft7Validator | None:
+        return self.validators.get(tool_name)
 
     def get_schema(self, tool_name: str) -> dict[str, Any] | None:
         return self.schemas.get(tool_name)
@@ -55,4 +63,5 @@ class ToolRegistry:
         copy = ToolRegistry()
         copy.schemas = dict(self.schemas)
         copy.handlers = dict(self.handlers)
+        copy.validators = dict(self.validators)
         return copy

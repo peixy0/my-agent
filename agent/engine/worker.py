@@ -160,25 +160,13 @@ SYSTEM EVENT: Scheduled task '{event.task_name}'
         await self.agent.run(prompt, self.conversation.messages, orchestrator)
         logger.info(f"Cron task '{event.task_name}' completed")
 
-    async def _process_text_input(self, event: TextInputEvent) -> None:
-        if not await self._check_dedup_and_compress(event.message_id, event.sender):
-            return
-
-        now, current_datetime = _format_current_datetime()
-        self.conversation.messages.append(
-            {
-                "role": "user",
-                "content": f"""Message Time: {current_datetime}
-Timezone: {now.tzinfo}
-
-{event.message}""",
-            }
-        )
-        logger.info(f"Processing text input: {event.message[:100]}...")
-        await event.sender.start_thinking()
+    async def _run_user_turn(self, message: dict[str, Any], sender: Channel) -> None:
+        """Shared path for text and image input: append, run agent, track tokens."""
+        self.conversation.messages.append(message)
+        await sender.start_thinking()
 
         prompt = self.prompt_builder.build()
-        orchestrator = self.orchestrator_factory.make_human_input(event.sender)
+        orchestrator = self.orchestrator_factory.make_human_input(sender)
         max_tokens = (
             self.settings.context_max_tokens
             if self.settings.context_auto_compression_enabled
@@ -192,7 +180,22 @@ Timezone: {now.tzinfo}
             self.settings.context_num_keep_last,
         )
         self.conversation.total_tokens = response.usage.total_tokens
-        await event.sender.end_thinking()
+        await sender.end_thinking()
+
+    async def _process_text_input(self, event: TextInputEvent) -> None:
+        if not await self._check_dedup_and_compress(event.message_id, event.sender):
+            return
+
+        now, current_datetime = _format_current_datetime()
+        message: dict[str, Any] = {
+            "role": "user",
+            "content": f"""Message Time: {current_datetime}
+Timezone: {now.tzinfo}
+
+{event.message}""",
+        }
+        logger.info(f"Processing text input: {event.message[:100]}...")
+        await self._run_user_turn(message, event.sender)
         logger.info("Text input processing completed")
 
     async def _process_image_input(self, event: ImageInputEvent) -> None:
@@ -208,47 +211,28 @@ Timezone: {now.tzinfo}
 
         now, current_datetime = _format_current_datetime()
         image_b64 = base64.b64encode(event.image_data).decode()
-        self.conversation.messages.append(
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": f"""Message Time: {current_datetime}
+        message: dict[str, Any] = {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"""Message Time: {current_datetime}
 Timezone: {now.tzinfo}
 
 {event.message}
 """,
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{event.mime_type};base64,{image_b64}",
+                        "detail": "auto",
                     },
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:{event.mime_type};base64,{image_b64}",
-                            "detail": "auto",
-                        },
-                    },
-                ],
-            }
-        )
+                },
+            ],
+        }
         logger.info("Processing image input")
-        await event.sender.start_thinking()
-
-        prompt = self.prompt_builder.build()
-        orchestrator = self.orchestrator_factory.make_human_input(event.sender)
-        max_tokens = (
-            self.settings.context_max_tokens
-            if self.settings.context_auto_compression_enabled
-            else 0
-        )
-        response = await self.agent.run(
-            prompt,
-            self.conversation.messages,
-            orchestrator,
-            max_tokens,
-            self.settings.context_num_keep_last,
-        )
-        self.conversation.total_tokens = response.usage.total_tokens
-        await event.sender.end_thinking()
+        await self._run_user_turn(message, event.sender)
         logger.info("Image input processing completed")
 
     async def run(self) -> None:

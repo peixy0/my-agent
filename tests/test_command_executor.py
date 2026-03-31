@@ -1,7 +1,6 @@
 """Tests for Runtime implementations."""
 
 import asyncio
-import base64
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -64,17 +63,19 @@ class TestContainerRuntime:
 
     @pytest.mark.asyncio
     async def test_read_file_success(self):
-        """Test successful file read with pagination metadata."""
+        """Test successful file read with pagination metadata.
+
+        read_file now uses ``wc -l && sed`` inside the container, so the
+        mock stdout is the line-count on the first line followed by the
+        requested content.
+        """
         with patch("shutil.which", return_value="/usr/bin/podman"):
             runtime = ContainerRuntime("test-container")
 
-        # read_file delegates to read_raw_bytes which returns base64-encoded bytes.
-        # Simulate a 10-line file; request lines 1-2.
-        file_content = "\n".join(f"line {i}" for i in range(1, 11)) + "\n"
-        encoded = base64.b64encode(file_content.encode()).decode()
+        wc_sed_output = "10\nline 1\nline 2\n"
 
         mock_process = AsyncMock()
-        mock_process.communicate.return_value = (encoded.encode(), b"")
+        mock_process.communicate.return_value = (wc_sed_output.encode(), b"")
         mock_process.returncode = 0
 
         with patch(
@@ -90,7 +91,7 @@ class TestContainerRuntime:
 
     @pytest.mark.asyncio
     async def test_write_file_success(self):
-        """Test successful file write."""
+        """Test successful file write (single exec call with mkdir+base64)."""
         with patch("shutil.which", return_value="/usr/bin/podman"):
             runtime = ContainerRuntime("test-container")
 
@@ -104,12 +105,9 @@ class TestContainerRuntime:
             result = await runtime.write_file("test.txt", "content")
 
         assert result["message"] == "Content saved to test.txt"
-        assert mock_create.call_count == 2
-        # Verify second call used stdin
-        assert mock_create.call_args_list[1].kwargs["stdin"] == asyncio.subprocess.PIPE
-        # Verify input was passed to communicate
-        assert mock_process.communicate.call_count == 2
-        assert mock_process.communicate.call_args_list[1].kwargs["input"] is not None
+        assert mock_create.call_count == 1
+        assert mock_create.call_args.kwargs["stdin"] == asyncio.subprocess.PIPE
+        assert mock_process.communicate.call_args.kwargs["input"] is not None
 
     @pytest.mark.asyncio
     async def test_edit_file_not_found(self):
