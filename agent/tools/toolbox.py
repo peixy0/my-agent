@@ -136,6 +136,21 @@ def register_default_tools(
         except Exception as e:
             return ToolContent.from_dict("error", {"message": str(e)})
 
+    async def apply_patch(patch: str) -> ToolContent:
+        """
+        Apply a unified diff patch to files in the workspace container.
+
+        The patch must be in standard unified diff format (as produced by `diff -u` or `git diff`).
+        Multiple files can be patched in a single call.
+        """
+        try:
+            result = await runtime.execute(
+                f"patch -p1 --batch <<'__PATCH_EOF__'\n{patch}\n__PATCH_EOF__"
+            )
+            return ToolContent.from_dict("success", result)
+        except Exception as e:
+            return ToolContent.from_dict("error", {"message": str(e)})
+
     async def grep(
         pattern: str,
         path: str = ".",
@@ -360,6 +375,20 @@ def register_default_tools(
                 },
             },
             "required": ["filename", "edits"],
+        },
+    )
+
+    registry.register(
+        apply_patch,
+        {
+            "type": "object",
+            "properties": {
+                "patch": {
+                    "type": "string",
+                    "description": "A unified diff patch (output of `diff -u` or `git diff`). May span multiple files.",
+                }
+            },
+            "required": ["patch"],
         },
     )
 
