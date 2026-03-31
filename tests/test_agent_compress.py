@@ -36,20 +36,21 @@ def _make_completion_response(content: str) -> CompletionResponseView:
 
 
 @pytest.mark.asyncio
-async def test_compress_empty_messages_returns_empty_string() -> None:
-    """compress() should return '' immediately without calling the LLM."""
+async def test_compress_empty_messages_is_noop() -> None:
+    """compress() should do nothing when given an empty list."""
     agent = _make_agent()
     agent.llm_client.do_completion = AsyncMock()
 
-    result = await agent.compress([])
+    messages: list = []
+    await agent.compress(messages)
 
-    assert result == ""
+    assert messages == []
     agent.llm_client.do_completion.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_compress_calls_llm_with_transcript() -> None:
-    """compress() should call the LLM and return the summary content."""
+async def test_compress_replaces_messages_with_summary() -> None:
+    """compress() should replace messages in-place with a single summary message."""
     agent = _make_agent()
     expected_summary = "User asked about file X. Agent read it and found Y."
     agent.llm_client.do_completion = AsyncMock(
@@ -61,19 +62,19 @@ async def test_compress_calls_llm_with_transcript() -> None:
         {"role": "assistant", "content": "File X contains Y."},
     ]
 
-    result = await agent.compress(messages)
+    await agent.compress(messages)
 
-    assert result == expected_summary
+    assert len(messages) == 1
+    assert messages[0]["role"] == "user"
+    assert expected_summary in messages[0]["content"]
     agent.llm_client.do_completion.assert_awaited_once()
 
-    call_kwargs = agent.llm_client.do_completion.call_args
-    sent_messages = call_kwargs.kwargs["messages"]
-
-    # System message should be the compression prompt
+    # Compression prompt should be the system message
+    sent_messages = agent.llm_client.do_completion.call_args.kwargs["messages"]
     assert sent_messages[0]["role"] == "system"
     assert "summarizer" in sent_messages[0]["content"].lower()
 
-    # User message should contain the transcript
+    # Transcript should contain the original messages
     user_content = sent_messages[1]["content"]
     assert "What is in file X?" in user_content
     assert "File X contains Y." in user_content
@@ -101,9 +102,10 @@ async def test_compress_strips_whitespace_from_summary() -> None:
         return_value=_make_completion_response("  summary with spaces  \n")
     )
 
-    result = await agent.compress([{"role": "user", "content": "hi"}])
+    messages = [{"role": "user", "content": "hi"}]
+    await agent.compress(messages)
 
-    assert result == "summary with spaces"
+    assert "summary with spaces" in messages[0]["content"]
 
 
 @pytest.mark.asyncio
@@ -126,23 +128,25 @@ async def test_compress_skips_messages_without_content() -> None:
         "content"
     ]
     assert "real message" in user_content
-    # None / empty content should not appear as literal "None" or blank entries
     assert "[ASSISTANT]\nNone" not in user_content
     assert "[TOOL]\n" not in user_content
 
 
 @pytest.mark.asyncio
-async def test_compress_includes_previous_summary_in_transcript() -> None:
-    """compress() should prepend the previous summary so compression is incremental."""
+async def test_compress_incremental_via_summary_message() -> None:
+    """compress() naturally incorporates a prior summary already in the message list."""
     agent = _make_agent()
     agent.llm_client.do_completion = AsyncMock(
         return_value=_make_completion_response("new summary")
     )
 
-    messages = [{"role": "user", "content": "follow-up question"}]
     prior = "Agent previously set up the database."
+    messages = [
+        {"role": "user", "content": f"[CONVERSATION SUMMARY]\n\n{prior}"},
+        {"role": "user", "content": "follow-up question"},
+    ]
 
-    await agent.compress(messages, previous_summary=prior)
+    await agent.compress(messages)
 
     user_content = agent.llm_client.do_completion.call_args.kwargs["messages"][1][
         "content"
@@ -185,19 +189,52 @@ async def test_compress_pairs_tool_call_with_result() -> None:
     user_content = agent.llm_client.do_completion.call_args.kwargs["messages"][1][
         "content"
     ]
-    # Tool call and its result should appear together
     assert "run_command" in user_content
     assert "README.md" in user_content
-    # The paired result should not appear again as a standalone TOOL RESULT
     assert user_content.count("README.md") == 1
 
 
 @pytest.mark.asyncio
-async def test_compress_no_llm_call_when_empty_after_keep() -> None:
-    """compress() with an empty list never calls the LLM."""
+async def test_compress_keep_last_retains_recent_messages() -> None:
+    """compress() with keep_last summarises everything, then appends the retained tail."""
+    agent = _make_agent()
+    agent.llm_client.do_completion = AsyncMock(
+        return_value=_make_completion_response("full summary")
+    )
+
+    messages = [
+        {"role": "user", "content": "old message 1"},
+        {"role": "assistant", "content": "old reply 1"},
+        {"role": "user", "content": "recent message"},
+    ]
+
+    await agent.compress(messages, keep_last=1)
+
+    # Result: [summary_message, recent_message]
+    assert len(messages) == 2
+    assert "full summary" in messages[0]["content"]
+    assert messages[1]["content"] == "recent message"
+
+    # The whole conversation (including recent message) was sent to the LLM
+    transcript = agent.llm_client.do_completion.call_args.kwargs["messages"][1][
+        "content"
+    ]
+    assert "old message 1" in transcript
+    assert "recent message" in transcript
+
+
+@pytest.mark.asyncio
+async def test_compress_noop_when_all_messages_retained() -> None:
+    """compress() should not call LLM when keep_last >= len(messages)."""
     agent = _make_agent()
     agent.llm_client.do_completion = AsyncMock()
 
-    await agent.compress([])
+    messages = [
+        {"role": "user", "content": "only message"},
+    ]
+    original = list(messages)
+
+    await agent.compress(messages, keep_last=5)
 
     agent.llm_client.do_completion.assert_not_called()
+    assert messages == original

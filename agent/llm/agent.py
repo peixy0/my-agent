@@ -297,17 +297,23 @@ class Agent:
         messages: list[dict[str, Any]],
         orchestrator: Orchestrator,
         system_messages: list[dict[str, Any]],
+        max_tokens: int = 0,
+        keep_last: int = 0,
     ) -> CompletionResponseView:
         """
         Sends a chat message to the LLM and handles the response.
 
         This method will automatically handle tool calls made by the LLM.
+        If finish_reason is not "stop" and max_tokens is set, compresses the
+        conversation in-place and retries rather than sending a "continue" message.
 
         Args:
             messages: A list of messages in the chat history.
             orchestrator: The orchestrator handling tool dispatch and responses.
             system_messages: Pre-built system messages; captured locally so
                              concurrent workers cannot overwrite each other.
+            max_tokens: When > 0, compress and retry if finish_reason != "stop"
+                        and total_tokens >= this threshold.
 
         Returns:
             The LLM's response.
@@ -331,6 +337,18 @@ class Agent:
             finish_reason = choice.finish_reason
             messages.append(message.model_dump())
 
+            if (
+                finish_reason != "stop"
+                and max_tokens
+                and response.usage.total_tokens >= max_tokens
+            ):
+                logger.info(
+                    f"finish_reason={finish_reason!r}, compressing "
+                    f"({response.usage.total_tokens} tokens)"
+                )
+                await self.compress(messages, keep_last)
+                continue
+
             reply = await orchestrator.process(message, finish_reason)
             if not reply:
                 return response
@@ -341,34 +359,48 @@ class Agent:
         system_prompt: str,
         messages: list[dict[str, Any]],
         orchestrator: Orchestrator,
+        max_tokens: int = 0,
+        keep_last: int = 0,
     ) -> CompletionResponseView:
-        """Run a single turn of the agent conversation."""
+        """Run a single turn of the agent conversation.
+
+        Args:
+            system_prompt: The system prompt for the agent.
+            messages: Conversation history (may start with a summary message).
+            orchestrator: The orchestrator handling tool dispatch and responses.
+            max_tokens: When > 0, compress mid-loop if finish_reason != "stop"
+                        and total_tokens >= this threshold.
+            keep_last: Number of recent messages to retain verbatim after compression.
+
+        Returns:
+            The final LLM response.
+        """
         system_messages = self._build_system_messages(system_prompt)
-        return await self._chat(messages, orchestrator, system_messages)
+        return await self._chat(
+            messages, orchestrator, system_messages, max_tokens, keep_last
+        )
 
     async def compress(
-        self,
-        messages: list[dict[str, Any]],
-        previous_summary: str = "",
-    ) -> str:
+        self, messages: list[dict[str, Any]], keep_last: int = 0
+    ) -> None:
         """
-        Compress a slice of conversation history into a structured, sectioned summary.
+        Compress conversation history in-place, retaining the recent tail verbatim.
 
-        Tool calls are paired with their results so the summariser LLM sees
-        action → outcome units rather than disconnected fragments.  Any
-        existing summary from a prior compression pass is prepended, making
-        repeated compressions incremental rather than discarding earlier context.
+        Summarises all messages except the last `keep_last`, then replaces the list
+        with [summary_message] + retained_tail.
 
-        Returns an empty string when there is nothing to summarise.
-
-        The caller is responsible for:
-        - Slicing the messages list (keep the recent tail verbatim via
-          context_num_keep_last; pass only the older head to this method).
-        - Storing the returned summary in conversation.previous_summary.
-        - Replacing conversation.messages with the retained tail.
+        Args:
+            messages: The conversation history (modified in-place).
+            keep_last: Number of recent messages to keep verbatim after the summary.
         """
         if not messages:
-            return ""
+            return
+
+        if keep_last > 0 and len(messages) <= keep_last:
+            return
+
+        to_summarize = messages
+        retained = messages[-keep_last:] if keep_last > 0 else []
 
         compression_prompt = (
             "You are a context compressor for an autonomous AI agent (summarizer).\n"
@@ -393,21 +425,17 @@ class Agent:
 
         # Pre-build a lookup of tool_call_id → truncated result for call/result pairing.
         tool_results: dict[str, str] = {}
-        for msg in messages:
+        for msg in to_summarize:
             if msg.get("role") == "tool":
                 tc_id = str(msg.get("tool_call_id") or "")
                 if tc_id:
                     tool_results[tc_id] = str(msg.get("content") or "")[:1000]
 
-        # Serialize the transcript.  Tool calls are immediately followed by their
+        # Serialize the transcript. Tool calls are immediately followed by their
         # result so the summariser sees action → outcome as a single unit.
         transcript_parts: list[str] = []
-        included_tool_ids: set[str] = set()
 
-        if previous_summary:
-            transcript_parts.append(f"[PRIOR SUMMARY]\n{previous_summary}")
-
-        for msg in messages:
+        for msg in to_summarize:
             role = msg.get("role", "")
             content = str(msg.get("content") or "")
             tool_calls = msg.get("tool_calls")
@@ -429,7 +457,6 @@ class Agent:
 
                     result = tool_results.get(tc_id, "")
                     if result:
-                        included_tool_ids.add(tc_id)
                         transcript_parts.append(f"[TOOL] {name}({args_str})\n{result}")
                     else:
                         transcript_parts.append(f"[TOOL] {name}({args_str})")
@@ -451,9 +478,17 @@ class Agent:
             top_p=1.0,
         )
 
-        summary = response.choices[0].message.content or ""
+        new_summary = (response.choices[0].message.content or "").strip()
         logger.info(f"Conversation compressed to {response.usage.total_tokens} tokens")
-        return summary.strip()
+
+        messages.clear()
+        messages.append(
+            {
+                "role": "user",
+                "content": f"[PREVIOUS CONVERSATION SUMMARY]\n\n{new_summary}",
+            }
+        )
+        messages.extend(retained)
 
 
 class OrchestratorFactory(Protocol):

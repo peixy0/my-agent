@@ -72,21 +72,6 @@ You are provided with a set of tools and skills to help you with your tasks. Use
 {bootstrap_context}
 """
 
-    def build_with_conversation_summary(self, previous_summary: str) -> str:
-        default_prompt = self.build()
-        summary_section = ""
-        if previous_summary:
-            summary_section = f"""# Conversation Summary
-
-The following is a compressed summary of the conversation history so far:
-
-{previous_summary}
-"""
-        return f"""{default_prompt}
-
-{summary_section}
-"""
-
     def build_with_context(self, context_files: list[str]) -> str:
         extra_context = self._load_workspace_files(context_files)
         return f"""{self.build()}

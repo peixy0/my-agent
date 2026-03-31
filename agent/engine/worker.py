@@ -44,7 +44,6 @@ class Conversation:
     messages: list[dict[str, Any]] = field(default_factory=list)
     message_ids: set[str] = field(default_factory=set)
     total_tokens: int = 0
-    previous_summary: str = ""
 
 
 def _format_current_datetime() -> tuple[datetime, str]:
@@ -86,30 +85,12 @@ class ConversationWorker:
         }
 
     async def _compress_conversation(self, sender: Channel) -> None:
-        """
-        Compress old messages into a structured summary, retaining the recent tail.
-
-        The last context_num_keep_last messages are kept verbatim so the agent
-        retains immediate context.  The prior summary is passed to compress() so
-        each compression is incremental — earlier history is never silently lost.
-        """
-        keep_last = self.settings.context_num_keep_last
-        if keep_last > 0 and len(self.conversation.messages) > keep_last:
-            to_summarize = self.conversation.messages[:-keep_last]
-            retained = self.conversation.messages[-keep_last:]
-        else:
-            to_summarize = self.conversation.messages
-            retained = []
-
-        logger.info(
-            f"Compressing {len(to_summarize)} messages, retaining {len(retained)}"
-        )
+        """Compress conversation history. Agent handles all message manipulation."""
+        logger.info(f"Compressing {len(self.conversation.messages)} messages")
         await sender.send("Context window full, compressing conversation…")
-        self.conversation.previous_summary = await self.agent.compress(
-            to_summarize,
-            previous_summary=self.conversation.previous_summary,
+        await self.agent.compress(
+            self.conversation.messages, self.settings.context_num_keep_last
         )
-        self.conversation.messages = retained
         self.conversation.total_tokens = 0
         self.conversation.message_ids = set()
         await sender.send("Conversation compressed")
@@ -196,12 +177,19 @@ Timezone: {now.tzinfo}
         logger.info(f"Processing text input: {event.message[:100]}...")
         await event.sender.start_thinking()
 
-        prompt = self.prompt_builder.build_with_conversation_summary(
-            self.conversation.previous_summary
-        )
+        prompt = self.prompt_builder.build()
         orchestrator = self.orchestrator_factory.make_human_input(event.sender)
+        max_tokens = (
+            self.settings.context_max_tokens
+            if self.settings.context_auto_compression_enabled
+            else 0
+        )
         response = await self.agent.run(
-            prompt, self.conversation.messages, orchestrator
+            prompt,
+            self.conversation.messages,
+            orchestrator,
+            max_tokens,
+            self.settings.context_num_keep_last,
         )
         self.conversation.total_tokens = response.usage.total_tokens
         await event.sender.end_thinking()
@@ -245,12 +233,19 @@ Timezone: {now.tzinfo}
         logger.info("Processing image input")
         await event.sender.start_thinking()
 
-        prompt = self.prompt_builder.build_with_conversation_summary(
-            self.conversation.previous_summary
-        )
+        prompt = self.prompt_builder.build()
         orchestrator = self.orchestrator_factory.make_human_input(event.sender)
+        max_tokens = (
+            self.settings.context_max_tokens
+            if self.settings.context_auto_compression_enabled
+            else 0
+        )
         response = await self.agent.run(
-            prompt, self.conversation.messages, orchestrator
+            prompt,
+            self.conversation.messages,
+            orchestrator,
+            max_tokens,
+            self.settings.context_num_keep_last,
         )
         self.conversation.total_tokens = response.usage.total_tokens
         await event.sender.end_thinking()
